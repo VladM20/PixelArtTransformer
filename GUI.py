@@ -1,5 +1,5 @@
 import sys
-import os
+
 from pathlib import Path
 from PySide6.QtCore import QSize, Slot
 
@@ -17,11 +17,12 @@ class MainWindow(QMainWindow):
         # noinspection PyTypeChecker
         self.resize(QGuiApplication.primaryScreen().availableSize()*3/5)
         # preview area
-        self.preview = QLabel("Preview")
+        self.preview = QLabel("<b>No image loaded</b>")
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview.setMinimumSize(QSize(400, 300))
         self.preview.setStyleSheet("border: 1px solid gray;")
-
+        self.preview.setPixmap(QPixmap("noimage_nobackground.png"))
+        self.noImage = True
         # palette dropdown
         self.paletteDropdown = QComboBox()
         self.paletteDropdown.addItem("EGA (16 colors)")
@@ -118,10 +119,11 @@ class MainWindow(QMainWindow):
             self.currentImage = fileName
             pixmap = QPixmap(self.currentImage)
             self.preview.setPixmap(pixmap.scaled(self.preview.size(), Qt.AspectRatioMode.KeepAspectRatio))
+            self.noImage = False
 
     @Slot()
     def updatePreview(self):
-        if not self.currentImage:
+        if self.noImage:
             print("No Image Selected")
             return
         targetResolution = self.resolutionSlider.value()
@@ -144,7 +146,7 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def saveAsImage(self, setPreferences=False):
-        if self.preview.pixmap().isNull():
+        if self.noImage:
             print("No Image Selected")
             return
         dir = str(Path(self.currentImage).stem) + "_pixelized"
@@ -169,7 +171,7 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def saveImage(self):
-        if not self.currentImage or self.preview.pixmap().isNull():
+        if self.noImage:
             print("No Image Selected")
             return
         # read preferences
