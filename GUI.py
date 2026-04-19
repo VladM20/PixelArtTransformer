@@ -5,9 +5,7 @@ from PySide6.QtCore import QSize, Slot
 import image_processing as image
 from PySide6.QtGui import QIcon, QAction, QGuiApplication, QPixmap, Qt, QImage
 from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QSlider, QSpinBox, QMainWindow, \
-    QHBoxLayout, QWidget, QGraphicsView, QMenuBar, QFileDialog, QComboBox
-
-from image_processing import VGA_256_color_palette
+    QHBoxLayout, QWidget, QFileDialog, QComboBox, QVBoxLayout
 
 
 class MainWindow(QMainWindow):
@@ -16,33 +14,71 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Pixel Art Transformer")
         # noinspection PyTypeChecker
         self.resize(QGuiApplication.primaryScreen().availableSize()*3/5)
-        self.createMenuBar()
         # preview area
         self.preview = QLabel("Preview")
+        self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview.setMinimumSize(QSize(400, 300))
+        self.preview.setStyleSheet("border: 1px solid gray;")
 
-        preset = QComboBox()
-        preset.addItem("EGA")
-        preset.addItem("VGA")
-        preset.addItem("Custom")
+        # palette dropdown
+        self.paletteDropdown = QComboBox()
+        self.paletteDropdown.addItem("EGA (16 colors)")
+        self.paletteDropdown.addItem("VGA (256 colors)")
+        self.paletteDropdown.addItem("Custom")
+        self.paletteDropdown.currentIndexChanged.connect(self.updatePreview)
 
+        # resolution slider
+        self.resolutionSlider = QSlider(Qt.Orientation.Horizontal)
+        self.resolutionSlider.setRange(1, 512)
+        self.resolutionSlider.setValue(100)
+        self.resolutionSlider.sliderReleased.connect(self.updatePreview)
+
+        # resolution spinbox
+        self.resolutionSpinBox = QSpinBox()
+        self.resolutionSpinBox.setRange(1, 512)
+        self.resolutionSpinBox.setValue(100)
+        self.resolutionSpinBox.editingFinished.connect(self.updatePreview)
+
+        # connecting the resolution controls
+        self.resolutionSlider.valueChanged.connect(self.resolutionSpinBox.setValue)
+        self.resolutionSpinBox.valueChanged.connect(self.resolutionSlider.setValue)
+
+        # buttons
         uploadButton = QPushButton("Upload Image")
         uploadButton.clicked.connect(self.uploadImage)
-        startButton = QPushButton("Start")
-        startButton.clicked.connect(self.processImage)
+        processButton = QPushButton("Update Preview")
+        processButton.clicked.connect(self.updatePreview)
 
+        # layout
+        # buttons layed out horizontally
         buttonLayout = QHBoxLayout()
         buttonLayout.addWidget(uploadButton)
-        buttonLayout.addWidget(startButton)
+        buttonLayout.addWidget(processButton)
 
-        layout = QHBoxLayout()
-        layout.addWidget(self.preview, stretch=3)
-        layout.addLayout(buttonLayout, stretch=1)
+        # resolution controls layed horizontally
+        resolutionLayout = QHBoxLayout()
+        resolutionLayout.addWidget(QLabel("Pixel Resolution (width): "))
+        resolutionLayout.addWidget(self.resolutionSpinBox)
+        resolutionLayout.addWidget(self.resolutionSlider)
+
+        # all controls layed out vertically
+        controlsLayout = QVBoxLayout()
+        controlsLayout.addWidget(QLabel("Color Palette: "))
+        controlsLayout.addWidget(self.paletteDropdown)
+        controlsLayout.addSpacing(15)
+        controlsLayout.addLayout(resolutionLayout)
+        controlsLayout.addLayout(buttonLayout)
+        controlsLayout.addStretch()
+
+        # main layout
+        MainLayout = QHBoxLayout()
+        MainLayout.addWidget(self.preview, stretch=3)
+        MainLayout.addLayout(controlsLayout, stretch=1)
 
         container = QWidget()
-        container.setLayout(layout)
+        container.setLayout(MainLayout)
         self.setCentralWidget(container)
-
+        self.createMenuBar()
         self.currentImage = None
 
     def createMenuBar(self):
@@ -59,9 +95,13 @@ class MainWindow(QMainWindow):
         fileMenu.addAction(actionSave)
         fileMenu.addAction(actionSaveAs)
 
+        actionOpen.triggered.connect(self.uploadImage)
+
         presetsMenu = menuBar.addMenu("&Presets")
-        actionVGA = QAction("VGA", self)
-        actionEGA = QAction("EGA", self)
+        actionVGA = QAction("VGA (256 colors)", self)
+        actionVGA.triggered.connect(lambda: self.paletteDropdown.setCurrentIndex(1))
+        actionEGA = QAction("EGA (16 colors)", self)
+        actionEGA.triggered.connect(lambda: self.paletteDropdown.setCurrentIndex(0))
 
         presetsMenu.addAction(actionVGA)
         presetsMenu.addAction(actionEGA)
@@ -74,14 +114,23 @@ class MainWindow(QMainWindow):
             pixmap = QPixmap(self.currentImage)
             self.preview.setPixmap(pixmap.scaled(self.preview.size(), Qt.AspectRatioMode.KeepAspectRatio))
 
-    def processImage(self):
+    @Slot()
+    def updatePreview(self):
         if not self.currentImage:
             print("No Image Selected")
             return
+        targetResolution = self.resolutionSlider.value()
+        targetPalette = self.paletteDropdown.currentIndex()
         img = image.readImage(self.currentImage)
-        result = image.colorProcessing(img,palette=VGA_256_color_palette)
-
+        img = image.downscale(img, targetResolution, targetResolution, keepAspectRatio=True)
+        match targetPalette:
+            case 0:
+                img = image.colorProcessing(img,palette=image.EGA_16_color_palette)
+            case 1:
+                img = image.colorProcessing(img, palette=image.VGA_256_color_palette)
         height, width, channels = img.shape
+        result = image.upscale(img, height, width, keepAspectRatio=True)
+        height, width, channels = result.shape
         bytesPerLine = channels * width
 
         QImg = QImage(result.data, width, height, bytesPerLine, QImage.Format.Format_RGB888)
