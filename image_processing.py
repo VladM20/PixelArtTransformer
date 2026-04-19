@@ -89,16 +89,3 @@ def colorProcessing(img, palette):
     new_pixels = palette[new_colors]
     new_img = new_pixels.reshape((height,width,channels))
     return new_img.astype(np.uint8)
-
-if __name__ == '__main__':
-    img = readImage("megadeth.jpg")
-    height, width = img.shape[:2]
-    # noinspection PyTypeChecker
-    img = downscale(img, 500, 100, keepAspectRatio=True)
-    img = colorProcessing(img, palette=EGA_16_color_palette)
-    img = upscale(img, 500, 600, keepAspectRatio=True)
-    img = cv.cvtColor(img, cv.COLOR_RGB2BGR)
-    cv.imshow("img", img)
-    key = cv.waitKey(0)
-    if key == ord("q"):
-        cv.destroyAllWindows()
