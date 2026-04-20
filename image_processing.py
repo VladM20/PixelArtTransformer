@@ -75,17 +75,37 @@ def upscale(img, newWidth, newHeight, keepAspectRatio=False):
     img_large = cv.resize(img,(newHeight,newWidth),interpolation=cv.INTER_NEAREST_EXACT)
     return img_large
 
-def colorProcessing(img, palette):
+def colorProcessing(img, palette=None, maxColors=None):
+    if palette is None:
+        return dynamicPalette(img, maxColors)
+    elif maxColors is None:
+        return fixedPalette(img,palette)
+    else:
+        return img
+
+def dynamicPalette(img, maxColors):
+    pixels = img.reshape(-1,3).astype(np.float32)
+    tries = 10
+
+    criteria = (cv.TermCriteria_EPS + cv.TermCriteria_MAX_ITER, 10, 1.0)
+
+    _, colors, locations = cv.kmeans(pixels, maxColors,None, criteria, tries, cv.KMEANS_RANDOM_CENTERS)
+
+    result = locations[colors.flatten()]
+    imgResult = result.reshape(img.shape)
+    return imgResult
+
+def fixedPalette(img, palette):
     height, width, channels = img.shape
     pixels = img.reshape(-1, channels).astype(np.float32)
     palette = hex2rgb(palette).astype(np.float32)
     # calculating the difference between the original color values and the palette ones
-    diff = pixels[:,np.newaxis,:] - palette[np.newaxis,:,:]
+    diff = pixels[:, np.newaxis, :] - palette[np.newaxis, :, :]
     # calculating the squared distance
     # we only need the minimum distance so there is no point in calculating square root
     square_distance = np.sum(diff ** 2, axis=2)
     # extracting the index of the closest color
     new_colors = np.argmin(square_distance, axis=1)
     new_pixels = palette[new_colors]
-    new_img = new_pixels.reshape((height,width,channels))
+    new_img = new_pixels.reshape((height, width, channels))
     return new_img.astype(np.uint8)
