@@ -91,6 +91,7 @@ def dynamicPalette(img, maxColors):
 
     _, colors, locations = cv.kmeans(pixels, maxColors,None, criteria, tries, cv.KMEANS_RANDOM_CENTERS)
 
+    locations = np.uint8(locations)
     result = locations[colors.flatten()]
     imgResult = result.reshape(img.shape)
     return imgResult
