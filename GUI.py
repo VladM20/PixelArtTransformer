@@ -1,19 +1,72 @@
 import sys
 
 from pathlib import Path
-from PySide6.QtCore import QSize, Slot
+from PySide6.QtCore import QSize, Slot, QSettings
 
 import image_processing as image
 from PySide6.QtGui import QIcon, QAction, QGuiApplication, QPixmap, Qt, QImage
 from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QSlider, QSpinBox, QMainWindow, \
-    QHBoxLayout, QWidget, QFileDialog, QComboBox, QVBoxLayout, QTabWidget, QMessageBox
-from PySide6.QtCore import QSettings
+    QHBoxLayout, QWidget, QFileDialog, QComboBox, QVBoxLayout, QTabWidget, QMessageBox, QDialog, QLineEdit, \
+    QDialogButtonBox
 
 MIN_RESOLUTION = 4
 MAX_RESOLUTION = 512
 MIN_COLORS = 2
 MAX_COLORS = 32000
 MAX_SLIDER_COLORS = 256
+
+class PreferencesDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Preferences")
+        self.setMinimumSize(QSize(500, 200))
+        self.settings = QSettings("PixelArtTransformer", "Settings")
+
+        mainLayout = QVBoxLayout(self)
+
+        directoryLayout = QHBoxLayout()
+        directoryLayout.addWidget(QLabel("Default save directory: "))
+        self.directoryEdit = QLineEdit()
+        self.directoryEdit.setText(str(self.settings.value("default_save_directory")))
+        directoryLayout.addWidget(self.directoryEdit)
+
+        browseButton = QPushButton("Browse...")
+        browseButton.clicked.connect(self.browseDirectory)
+        directoryLayout.addWidget(browseButton)
+
+        formatLayout = QHBoxLayout()
+        formatLayout.addWidget(QLabel("Default format: "))
+        self.formatDropdown = QComboBox()
+        self.formatDropdown.addItems(["png", "jpg", "jpeg", "bmp"])
+        savedFormat = self.settings.value("default_save_format")
+        if savedFormat is None:
+            savedFormat = "png"
+        self.formatDropdown.setCurrentText(savedFormat)
+        formatLayout.addWidget(self.formatDropdown)
+        formatLayout.addStretch()
+
+        ButtonBox = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Close)
+        ButtonBox.accepted.connect(self.saveSettings)
+        ButtonBox.rejected.connect(self.reject)
+
+        mainLayout.addLayout(directoryLayout)
+        mainLayout.addLayout(formatLayout)
+        mainLayout.addStretch()
+        mainLayout.addWidget(ButtonBox)
+
+    @Slot()
+    def saveSettings(self):
+        self.settings.setValue("default_save_directory", self.directoryEdit.text())
+        self.settings.setValue("default_save_format", self.formatDropdown.currentText())
+        self.accept()
+
+    @Slot()
+    def browseDirectory(self):
+        options = QFileDialog.Option.ShowDirsOnly
+        directory = QFileDialog.getExistingDirectory(self, "Select Save Folder", self.directoryEdit.text(), options=options)
+        if directory:
+            self.directoryEdit.setText(directory)
+
 
 class MainWindow(QMainWindow):
     def __init__(self, parent=None):
@@ -199,6 +252,16 @@ class MainWindow(QMainWindow):
 
         presetsMenu.addAction(actionVGA)
         presetsMenu.addAction(actionEGA)
+
+        preferencesMenu = menuBar.addMenu("&Preferences")
+        preferencesAction = QAction("&Preferences...", self)
+        preferencesAction.triggered.connect(self.openPreferences)
+        preferencesMenu.addAction(preferencesAction)
+
+    @Slot()
+    def openPreferences(self):
+        dialog = PreferencesDialog(self)
+        dialog.exec()
 
     @Slot(int)
     def showColorControls(self):
