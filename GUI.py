@@ -6,13 +6,14 @@ from PySide6.QtCore import QSize, Slot
 import image_processing as image
 from PySide6.QtGui import QIcon, QAction, QGuiApplication, QPixmap, Qt, QImage
 from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QSlider, QSpinBox, QMainWindow, \
-    QHBoxLayout, QWidget, QFileDialog, QComboBox, QVBoxLayout
+    QHBoxLayout, QWidget, QFileDialog, QComboBox, QVBoxLayout, QTabWidget, QMessageBox
 from PySide6.QtCore import QSettings
 
-MIN_RESOLUTION = 2
+MIN_RESOLUTION = 4
 MAX_RESOLUTION = 512
 MIN_COLORS = 2
-MAX_COLORS = 4096
+MAX_COLORS = 32000
+MAX_SLIDER_COLORS = 256
 
 class MainWindow(QMainWindow):
     def __init__(self, parent=None):
@@ -35,30 +36,7 @@ class MainWindow(QMainWindow):
         self.paletteDropdown.addItem("EGA (16 colors)")
         self.paletteDropdown.addItem("VGA (256 colors)")
         self.paletteDropdown.addItem("Custom")
-        self.paletteDropdown.currentIndexChanged.connect(self.updatePreview)
-
-        # custom colors slider and spinbox
-        self.customColorsSlider = QSlider(Qt.Orientation.Horizontal)
-        self.customColorsSlider.setRange(MIN_COLORS, MAX_COLORS)
-        self.customColorsSlider.setValue(16)
-        self.customColorsSlider.sliderReleased.connect(self.updatePreview)
-
-        self.customColorsSpinBox = QSpinBox()
-        self.customColorsSpinBox.setRange(MIN_COLORS, MAX_COLORS)
-        self.customColorsSpinBox.setValue(16)
-        self.customColorsSpinBox.editingFinished.connect(self.updatePreview)
-
-        self.customColorsSlider.valueChanged.connect(self.customColorsSpinBox.setValue)
-        self.customColorsSpinBox.valueChanged.connect(self.customColorsSlider.setValue)
-
-        self.customColorsWidget = QWidget()
-        self.customColorsLayout = QVBoxLayout(self.customColorsWidget)
-        self.customColorsControlsLayout = QHBoxLayout()
-        self.customColorsControlsLayout.addWidget(QLabel("Maximum number of colors: "))
-        self.customColorsControlsLayout.addWidget(self.customColorsSpinBox)
-        self.customColorsLayout.addLayout(self.customColorsControlsLayout)
-        self.customColorsLayout.addWidget(self.customColorsSlider)
-        self.customColorsWidget.setVisible(False)
+        self.paletteDropdown.currentIndexChanged.connect(self.showColorControls)
 
         # RESOLUTION SETTINGS
         self.aspectRatio = 1.0
@@ -67,39 +45,74 @@ class MainWindow(QMainWindow):
 
         self.originalResolutionLabel = QLabel("Original Image Resolution: ")
         self.originalResolutionLabel.setStyleSheet("color: gray; font-size: 11px;")
+        self.originalColorLabel = QLabel()
+        self.originalColorLabel.setStyleSheet("color: gray; font-size: 11px;")
 
-        # resolution width slider
-        self.resolutionSliderW = QSlider(Qt.Orientation.Horizontal)
-        self.resolutionSliderW.setRange(MIN_RESOLUTION, MAX_RESOLUTION)
-        self.resolutionSliderW.setValue(100)
-        self.resolutionSliderW.sliderReleased.connect(self.updatePreview)
+        # TAB SETTINGS
+        self.tabs = QTabWidget()
 
-        # resolution height slider
-        self.resolutionSliderH = QSlider(Qt.Orientation.Horizontal)
-        self.resolutionSliderH.setRange(MIN_RESOLUTION, MAX_RESOLUTION)
-        self.resolutionSliderH.setValue(100)
-        self.resolutionSliderH.sliderReleased.connect(self.updatePreview)
+        # BASIC TAB
+        basicTab = QWidget()
+        basicLayout = QVBoxLayout(basicTab)
+        # resolution
+        basicLayout.addWidget(QLabel("Quality: "))
+        self.resolutionSlider = QSlider(Qt.Orientation.Horizontal)
+        self.resolutionSlider.setRange(MIN_RESOLUTION, MAX_RESOLUTION)
+        self.resolutionSlider.setValue(100)
+        self.resolutionSlider.sliderReleased.connect(self.syncResolutionControls)
+        basicLayout.addWidget(self.resolutionSlider)
+        # colors
+        self.basicColorWidget = QWidget()
+        basicColorLayout = QVBoxLayout(self.basicColorWidget)
+        basicColorLayout.addWidget(QLabel("Number of colors: "))
+        self.colorSlider = QSlider(Qt.Orientation.Horizontal)
+        self.colorSlider.setRange(MIN_COLORS, MAX_SLIDER_COLORS)
+        self.colorSlider.setValue(16)
+        self.colorSlider.sliderReleased.connect(self.syncColorControls)
+        basicColorLayout.addWidget(self.colorSlider)
 
-        labelX = QLabel("X")
-        labelX.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.basicColorWidget.setEnabled(False)
+        basicLayout.addWidget(self.basicColorWidget)
+        basicLayout.addStretch()
 
+        # ADVANCED TAB
+        advancedTab = QWidget()
+        advancedLayout = QVBoxLayout(advancedTab)
+        # resolution
+        advancedLayout.addWidget(QLabel("Resolution: "))
+        resolutionLayout = QHBoxLayout()
         # resolution width spinbox
         self.resolutionSpinBoxW = QSpinBox()
-        self.resolutionSpinBoxW.setRange(MIN_RESOLUTION, MAX_RESOLUTION)
+        self.resolutionSpinBoxW.setRange(MIN_RESOLUTION, 10*MAX_RESOLUTION)
         self.resolutionSpinBoxW.setValue(100)
-        self.resolutionSpinBoxW.editingFinished.connect(self.updatePreview)
-
+        self.resolutionSpinBoxW.editingFinished.connect(self.syncResolutionControls)
         # resolution height spinbox
         self.resolutionSpinBoxH = QSpinBox()
-        self.resolutionSpinBoxH.setRange(MIN_RESOLUTION, MAX_RESOLUTION)
+        self.resolutionSpinBoxH.setRange(MIN_RESOLUTION, 10*MAX_RESOLUTION)
         self.resolutionSpinBoxH.setValue(100)
-        self.resolutionSpinBoxH.editingFinished.connect(self.updatePreview)
+        self.resolutionSpinBoxH.editingFinished.connect(self.syncResolutionControls)
 
-        # connecting the resolution controls
-        self.resolutionSliderW.valueChanged.connect(self.resolutionSpinBoxW.setValue)
-        self.resolutionSpinBoxW.valueChanged.connect(self.resolutionSliderW.setValue)
-        self.resolutionSliderH.valueChanged.connect(self.resolutionSpinBoxH.setValue)
-        self.resolutionSpinBoxH.valueChanged.connect(self.resolutionSliderH.setValue)
+        resolutionLayout.addWidget(self.resolutionSpinBoxW)
+        labelX = QLabel("X")
+        labelX.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        resolutionLayout.addWidget(labelX)
+        resolutionLayout.addWidget(self.resolutionSpinBoxH)
+        advancedLayout.addLayout(resolutionLayout)
+        # color
+        self.advancedColorWidget = QWidget()
+        advancedColorLayout = QVBoxLayout(self.advancedColorWidget)
+        self.colorSpinBox = QSpinBox()
+        self.colorSpinBox.setRange(MIN_COLORS, MAX_COLORS)
+        self.colorSpinBox.setValue(16)
+        self.colorSpinBox.editingFinished.connect(self.syncColorControls)
+        advancedColorLayout.addWidget(self.colorSpinBox)
+
+        self.advancedColorWidget.setEnabled(False)
+        advancedLayout.addWidget(self.advancedColorWidget)
+        advancedLayout.addStretch()
+
+        self.tabs.addTab(basicTab, "Basic")
+        self.tabs.addTab(advancedTab, "Advanced")
 
         # buttons
         # Upload Image button
@@ -110,9 +123,14 @@ class MainWindow(QMainWindow):
         processButton = QPushButton("Update Preview")
         processButton.clicked.connect(self.updatePreview)
 
+        # Save button
+        saveButton = QPushButton("Save")
+        saveButton.clicked.connect(self.saveAsImage)
+
         # locking button
         self.lockRatioButton = QPushButton("Lock Ratio")
         self.lockRatioButton.setCheckable(True)
+        self.lockRatioButton.setChecked(True)
         self.lockRatioButton.setToolTip("Preserve Aspect Ratio")
         self.lockRatioButton.toggled.connect(self.setLockRatio)
 
@@ -121,35 +139,24 @@ class MainWindow(QMainWindow):
         self.restoreButton.setToolTip("Restore Original Image Resolution")
         self.restoreButton.clicked.connect(self.restoreImage)
 
-        # layout
         # buttons layed out horizontally
         buttonLayout = QHBoxLayout()
         buttonLayout.addWidget(uploadButton)
         buttonLayout.addWidget(processButton)
-
-        # resolution controls layed out horizontally
-        resolutionLayout = QVBoxLayout()
-        resolutionLayout.addWidget(QLabel("Input Resolution: "))
-
-        spinboxesLayout = QHBoxLayout()
-        spinboxesLayout.addWidget(self.resolutionSpinBoxW)
-        spinboxesLayout.addWidget(labelX)
-        spinboxesLayout.addWidget(self.resolutionSpinBoxH)
-        spinboxesLayout.addWidget(self.lockRatioButton)
-        spinboxesLayout.addWidget(self.restoreButton)
-        resolutionLayout.addLayout(spinboxesLayout)
-
-        resolutionLayout.addWidget(self.resolutionSliderW)
-        resolutionLayout.addWidget(self.resolutionSliderH)
+        buttonLayout.addWidget(saveButton)
 
         # all controls layed out vertically
         controlsLayout = QVBoxLayout()
-        controlsLayout.addSpacing(15)
-        controlsLayout.addWidget(self.originalResolutionLabel)
-        controlsLayout.addLayout(resolutionLayout)
+        # original image info
+        originalInfoLayout = QHBoxLayout()
+        originalInfoLayout.addWidget(self.originalResolutionLabel)
+        originalInfoLayout.addWidget(self.originalColorLabel)
+        controlsLayout.addLayout(originalInfoLayout)
+
         controlsLayout.addWidget(QLabel("Color Palette: "))
         controlsLayout.addWidget(self.paletteDropdown)
-        controlsLayout.addWidget(self.customColorsWidget)
+        controlsLayout.addWidget(self.tabs)
+
         controlsLayout.addStretch()
         controlsLayout.addLayout(buttonLayout)
         controlsLayout.addSpacing(30)
@@ -193,28 +200,55 @@ class MainWindow(QMainWindow):
         presetsMenu.addAction(actionVGA)
         presetsMenu.addAction(actionEGA)
 
+    @Slot(int)
+    def showColorControls(self):
+        isCustom = (self.paletteDropdown.currentIndex() == 2)
+        self.basicColorWidget.setEnabled(isCustom)
+        self.advancedColorWidget.setEnabled(isCustom)
+        self.updatePreview()
+
     @Slot()
     def restoreImage(self):
         if self.noImage:
             return
-
-        self.preview.setPixmap(QPixmap(self.currentImage).scaled(self.preview.size(), Qt.AspectRatioMode.KeepAspectRatio))
-        self.resolutionSliderH.setValue(int(self.resolutionSliderW.value() / self.originalAspectRatio))
-
+        pixmap = QPixmap(self.currentImage)
+        self.preview.setPixmap(pixmap.scaled(self.preview.size(), Qt.AspectRatioMode.KeepAspectRatio))
+        self.resolutionSpinBoxW.setValue(pixmap.width())
+        self.resolutionSpinBoxH.setValue(pixmap.height())
 
     @Slot(int)
-    def syncWidth(self, width):
-        self.resolutionSliderW.setValue(width)
-        self.resolutionSpinBoxW.setValue(width)
+    def syncColorControls(self):
+        if self.sender() == self.colorSlider:
+            self.colorSpinBox.blockSignals(True)
+            self.colorSpinBox.setValue(self.colorSlider.value())
+            self.colorSpinBox.blockSignals(False)
+        if self.sender() == self.colorSpinBox:
+            self.colorSlider.blockSignals(True)
+            value = min(MAX_SLIDER_COLORS, self.colorSpinBox.value())
+            self.colorSlider.setValue(value)
+            self.colorSlider.blockSignals(False)
+        self.updatePreview()
 
-        if self.lockRatioButton.isChecked():
-            newHeight = int(width / self.aspectRatio)
-            newHeight = max(MIN_RESOLUTION, min(newHeight, MAX_RESOLUTION))
-            self.resolutionSliderH.setValue(newHeight)
+    @Slot(int)
+    def syncResolutionControls(self):
+        if self.sender() == self.resolutionSlider:
+            self.resolutionSpinBoxW.blockSignals(True)
+            self.resolutionSpinBoxW.setValue(self.resolutionSlider.value())
+            self.resolutionSpinBoxW.blockSignals(False)
+
+            self.resolutionSpinBoxH.blockSignals(True)
+            self.resolutionSpinBoxH.setValue(int(self.resolutionSlider.value() / self.aspectRatio))
+            self.resolutionSpinBoxH.blockSignals(False)
+        if self.sender() == self.resolutionSpinBoxW:
+            self.resolutionSlider.blockSignals(True)
+            value = max(MAX_RESOLUTION, self.resolutionSpinBoxW.value())
+            self.resolutionSlider.setValue(value)
+            self.resolutionSlider.blockSignals(False)
+        self.updatePreview()
+
 
     @Slot(bool)
     def setLockRatio(self, isLocked):
-        self.resolutionSliderH.setEnabled(not isLocked)
         self.resolutionSpinBoxH.setEnabled(not isLocked)
 
         if isLocked and self.sender() == self.lockRatioButton:
@@ -236,44 +270,52 @@ class MainWindow(QMainWindow):
             self.noImage = False
 
             # set controls UI
-            self.originalResolutionLabel.setText("Original Resolution: " + str(self.preview.pixmap().width()) + "x" + str(self.preview.pixmap().height()))
+            self.originalResolutionLabel.setText("Original Resolution: " + str(pixmap.width()) + "x" + str(pixmap.height()))
+            self.originalColorLabel.setText(str(pixmap.depth()) + "-bit color depth")
             self.lockRatioButton.blockSignals(True)
             self.lockRatioButton.setChecked(True)       # blocking the lock ratio button from calling setLockRatio and
             self.lockRatioButton.blockSignals(False)    # deleting the aspect ratio calculated above
 
             self.setLockRatio(True)
-            self.syncWidth(pixmap.width())
-            self.resolutionSliderH.setValue(int(self.resolutionSliderW.value() / self.originalAspectRatio))
 
     @Slot()
     def updatePreview(self):
         if self.noImage:
             print("No Image Selected")
-            return
-        targetResolution = self.resolutionSliderW.value()
+            return None
+        targetResolutionWidth = 0
+        targetResolutionHeight = 0
         targetPalette = self.paletteDropdown.currentIndex()
-        targetColors = self.customColorsSpinBox.value()
+        targetColors = 0
+        tab = self.tabs.currentIndex()
+        match tab:
+            case 0: # basic tab
+                targetResolutionWidth = self.resolutionSlider.value()
+                targetColors = self.colorSlider.value()
+            case 1: # advanced tab
+                targetResolutionWidth = self.resolutionSpinBoxW.value()
+                targetResolutionHeight = self.resolutionSpinBoxH.value()
+                targetColors = self.colorSpinBox.value()
 
         img = image.readImage(self.currentImage)
-        img = image.downscale(img, targetResolution, targetResolution, keepAspectRatio=True)
+        height, width, channels = img.shape
+        img = image.downscale(img, targetResolutionWidth, targetResolutionHeight, keepAspectRatio=self.lockRatioButton.isChecked())
         match targetPalette:
             case 0:
-                self.customColorsWidget.setVisible(False)
                 img = image.colorProcessing(img,palette=image.EGA_16_color_palette, maxColors=None)
             case 1:
-                self.customColorsWidget.setVisible(False)
                 img = image.colorProcessing(img, palette=image.VGA_256_color_palette, maxColors=None)
             case 2:
-                self.customColorsWidget.setVisible(True)
                 img = image.colorProcessing(img, palette=None, maxColors=targetColors)
-        height, width, channels = img.shape
-        result = image.upscale(img, height, width, keepAspectRatio=True)
+
+        result = image.upscale(img, width, height, keepAspectRatio=self.lockRatioButton.isChecked())
         height, width, channels = result.shape
         bytesPerLine = channels * width
 
         QImg = QImage(result.data, width, height, bytesPerLine, QImage.Format.Format_RGB888)
         pixmap = QPixmap.fromImage(QImg)
         self.preview.setPixmap(pixmap.scaled(self.preview.size(), Qt.AspectRatioMode.KeepAspectRatio))
+        return QImg
 
     @Slot()
     def saveAsImage(self, setPreferences=False):
@@ -288,7 +330,7 @@ class MainWindow(QMainWindow):
             "PNG (*.png);;JPEG (*.jpg *.jpeg);;BMP (*.bmp);;All Files (*.*)"
         )
         if filePath:
-            self.preview.pixmap().save(filePath)
+            self.updatePreview().save(str(filePath))
             # save default save directory and format
             if setPreferences:
                 settings = QSettings("PixelArtTransformer", "Settings")
@@ -317,9 +359,33 @@ class MainWindow(QMainWindow):
         oldFileName = Path(self.currentImage).stem
 
         newFileName = oldFileName + "_pixelized" + defaultFormat
-        fullPath = str(Path(defaultDirectory) / newFileName)
+        fullPath = Path(defaultDirectory) / newFileName
 
-        self.preview.pixmap().save(fullPath)
+        if fullPath.exists():
+            msgBox = QMessageBox()
+            msgBox.setIcon(QMessageBox.Icon.Warning)
+            msgBox.setWindowTitle("File Already Exists")
+            msgBox.setText("There is already a file named " + newFileName + ". What do you want to do?")
+
+            overwriteButton = msgBox.addButton("Overwrite existing", QMessageBox.ButtonRole.DestructiveRole)
+            uniqueButton = msgBox.addButton("Save with new name", QMessageBox.ButtonRole.AcceptRole)
+            cancelButton = msgBox.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+
+            msgBox.exec()
+            clickedButton = msgBox.clickedButton()
+
+            if clickedButton == uniqueButton:
+                    counter = 1
+                    while True:
+                        testPath = Path(defaultDirectory) / (newFileName + "_" + str(counter) + defaultFormat)
+                        if not testPath.exists():
+                            fullPath = testPath
+                            break
+                        counter += 1
+            elif clickedButton == cancelButton:
+                return
+
+        self.updatePreview().save(str(fullPath))
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
