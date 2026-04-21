@@ -65,14 +65,14 @@ def downscale(img, newWidth, newHeight, keepAspectRatio=False):
     height, width = img.shape[:2]
     if keepAspectRatio:
         newHeight = int(newWidth * (height / width))
-    img_small = cv.resize(img,(newHeight,newWidth),interpolation=cv.INTER_AREA)
+    img_small = cv.resize(img,(newWidth, newHeight),interpolation=cv.INTER_AREA)
     return img_small
 
 def upscale(img, newWidth, newHeight, keepAspectRatio=False):
     height, width = img.shape[:2]
     if keepAspectRatio:
         newHeight = int(newWidth * (height / width))
-    img_large = cv.resize(img,(newHeight,newWidth),interpolation=cv.INTER_NEAREST_EXACT)
+    img_large = cv.resize(img,(newWidth, newHeight),interpolation=cv.INTER_NEAREST_EXACT)
     return img_large
 
 def colorProcessing(img, palette=None, maxColors=None):
@@ -89,7 +89,12 @@ def dynamicPalette(img, maxColors):
 
     criteria = (cv.TermCriteria_EPS + cv.TermCriteria_MAX_ITER, 10, 1.0)
 
-    _, colors, locations = cv.kmeans(pixels, maxColors,None, criteria, tries, cv.KMEANS_RANDOM_CENTERS)
+    if maxColors > pixels.shape[0]:
+        maxColors = pixels.shape[0]
+
+    cv.setRNGSeed(289)
+
+    _, colors, locations = cv.kmeans(pixels, maxColors,None, criteria, tries, cv.KMEANS_PP_CENTERS)
 
     locations = np.uint8(locations)
     result = locations[colors.flatten()]
