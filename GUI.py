@@ -44,7 +44,7 @@ class PreferencesDialog(QDialog):
         self.formatDropdown.setCurrentText(savedFormat)
         formatLayout.addWidget(self.formatDropdown)
         formatLayout.addStretch()
-
+        # noinspection PyTypeChecker
         ButtonBox = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Close)
         ButtonBox.accepted.connect(self.saveSettings)
         ButtonBox.rejected.connect(self.reject)
@@ -68,6 +68,7 @@ class PreferencesDialog(QDialog):
             self.directoryEdit.setText(directory)
 
 
+# noinspection PyUnresolvedReferences
 class MainWindow(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -138,19 +139,34 @@ class MainWindow(QMainWindow):
         self.resolutionSpinBoxW = QSpinBox()
         self.resolutionSpinBoxW.setRange(MIN_RESOLUTION, 10*MAX_RESOLUTION)
         self.resolutionSpinBoxW.setValue(100)
-        self.resolutionSpinBoxW.editingFinished.connect(self.syncResolutionControls)
+        self.resolutionSpinBoxW.valueChanged.connect(self.syncResolutionControls)
         # resolution height spinbox
         self.resolutionSpinBoxH = QSpinBox()
         self.resolutionSpinBoxH.setRange(MIN_RESOLUTION, 10*MAX_RESOLUTION)
         self.resolutionSpinBoxH.setValue(100)
-        self.resolutionSpinBoxH.editingFinished.connect(self.syncResolutionControls)
+        self.resolutionSpinBoxH.valueChanged.connect(self.syncResolutionControls)
 
         resolutionLayout.addWidget(self.resolutionSpinBoxW)
         labelX = QLabel("X")
         labelX.setAlignment(Qt.AlignmentFlag.AlignCenter)
         resolutionLayout.addWidget(labelX)
         resolutionLayout.addWidget(self.resolutionSpinBoxH)
+
+        # locking button
+        self.lockRatioButton = QPushButton("🔒")
+        self.lockRatioButton.setCheckable(True)
+        self.lockRatioButton.setChecked(True)
+        self.lockRatioButton.setToolTip("Preserve Aspect Ratio")
+        self.lockRatioButton.toggled.connect(self.setLockRatio)
+
+        # restore original aspect ratio button
+        self.restoreButton = QPushButton("Restore")
+        self.restoreButton.setToolTip("Restore Original Image Resolution")
+        self.restoreButton.clicked.connect(self.restoreImage)
+        resolutionLayout.addWidget(self.lockRatioButton)
+        resolutionLayout.addWidget(self.restoreButton)
         advancedLayout.addLayout(resolutionLayout)
+
         # color
         self.advancedColorWidget = QWidget()
         advancedColorLayout = QVBoxLayout(self.advancedColorWidget)
@@ -179,18 +195,6 @@ class MainWindow(QMainWindow):
         # Save button
         saveButton = QPushButton("Save")
         saveButton.clicked.connect(self.saveAsImage)
-
-        # locking button
-        self.lockRatioButton = QPushButton("Lock Ratio")
-        self.lockRatioButton.setCheckable(True)
-        self.lockRatioButton.setChecked(True)
-        self.lockRatioButton.setToolTip("Preserve Aspect Ratio")
-        self.lockRatioButton.toggled.connect(self.setLockRatio)
-
-        # restore original aspect ratio button
-        self.restoreButton = QPushButton("Restore")
-        self.restoreButton.setToolTip("Restore Original Image Resolution")
-        self.restoreButton.clicked.connect(self.restoreImage)
 
         # buttons layed out horizontally
         buttonLayout = QHBoxLayout()
@@ -307,6 +311,11 @@ class MainWindow(QMainWindow):
             value = max(MAX_RESOLUTION, self.resolutionSpinBoxW.value())
             self.resolutionSlider.setValue(value)
             self.resolutionSlider.blockSignals(False)
+            if self.lockRatioButton.isChecked():
+                self.resolutionSpinBoxH.blockSignals(True)
+                value = int(self.resolutionSpinBoxW.value() / self.aspectRatio)
+                self.resolutionSpinBoxH.setValue(value)
+                self.resolutionSpinBoxH.blockSignals(False)
         self.updatePreview()
 
 
@@ -423,7 +432,7 @@ class MainWindow(QMainWindow):
 
         newFileName = oldFileName + "_pixelized" + defaultFormat
         fullPath = Path(defaultDirectory) / newFileName
-
+        print(fullPath)
         if fullPath.exists():
             msgBox = QMessageBox()
             msgBox.setIcon(QMessageBox.Icon.Warning)
@@ -440,7 +449,7 @@ class MainWindow(QMainWindow):
             if clickedButton == uniqueButton:
                     counter = 1
                     while True:
-                        testPath = Path(defaultDirectory) / (newFileName + "_" + str(counter) + defaultFormat)
+                        testPath = Path(defaultDirectory) / (newFileName + "_" + str(counter) + "." + defaultFormat)
                         if not testPath.exists():
                             fullPath = testPath
                             break
