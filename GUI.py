@@ -4,6 +4,7 @@ from pathlib import Path
 from PySide6.QtCore import QSize, Slot, QSettings
 
 import image_processing as image
+import video_processing as video
 from PySide6.QtGui import QIcon, QAction, QGuiApplication, QPixmap, Qt, QImage
 from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QSlider, QSpinBox, QMainWindow, \
     QHBoxLayout, QWidget, QFileDialog, QComboBox, QVBoxLayout, QTabWidget, QMessageBox, QDialog, QLineEdit, \
@@ -67,11 +68,13 @@ class PreferencesDialog(QDialog):
         if directory:
             self.directoryEdit.setText(directory)
 
+# TODO create UI for video processing
 
 # noinspection PyUnresolvedReferences
 class MainWindow(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.worker = None
         self.setWindowTitle("Pixel Art Transformer")
         # noinspection PyTypeChecker
         self.resize(QGuiApplication.primaryScreen().availableSize()*3/5)
@@ -432,7 +435,6 @@ class MainWindow(QMainWindow):
 
         newFileName = oldFileName + "_pixelized" + defaultFormat
         fullPath = Path(defaultDirectory) / newFileName
-        print(fullPath)
         if fullPath.exists():
             msgBox = QMessageBox()
             msgBox.setIcon(QMessageBox.Icon.Warning)
@@ -458,6 +460,132 @@ class MainWindow(QMainWindow):
                 return
 
         self.updatePreview().save(str(fullPath))
+
+    @Slot()
+    def saveAsVideo(self, setPreferences=False):
+        if self.noImage:
+            return
+        dir = str(Path(self.currentImage).stem) + "_pixelized"
+        filePath, filter = QFileDialog.getSaveFileName(
+            self,
+            "Save Video As",
+            dir,
+            "MP4 (*.mp4);;All Files (*.*)"
+        )
+        self.progressBar.setVisible(True)
+        self.progressBar.setValue(0)
+        self.toggleControls(False)
+
+        targetResolutionWidth = 0
+        targetResolutionHeight = 0
+        targetPalette = self.paletteDropdown.currentIndex()
+        targetColors = 0
+        tab = self.tabs.currentIndex()
+        match tab:
+            case 0: # basic tab
+                targetResolutionWidth = self.resolutionSlider.value()
+                targetColors = self.colorSlider.value()
+            case 1: # advanced tab
+                targetResolutionWidth = self.resolutionSpinBoxW.value()
+                targetResolutionHeight = self.resolutionSpinBoxH.value()
+                targetColors = self.colorSpinBox.value()
+
+        self.worker = video.VideoProcessing(self.currentImage, dir, targetResolutionWidth, targetResolutionHeight, targetPalette, targetColors)
+        self.worker.progress.connect(self.progressBar.setValue)
+        self.worker.finished.connect(self.onVideoFinished)
+        self.worker.start()
+
+        if filePath:
+
+            # save default save directory and format
+            if setPreferences:
+                settings = QSettings("PixelArtTransformer", "Settings")
+
+                saveDirectory = Path(filePath).parent
+                settings.setValue("default_save_directory", saveDirectory)
+
+    @Slot()
+    def saveVideo(self):
+        if self.noImage:
+            return
+        # read preferences
+        settings = QSettings("PixelArtTransformer", "Settings")
+        defaultDirectory = settings.value("default_save_directory")
+        defaultFormat = settings.value("default_save_format")
+
+        if not defaultDirectory or not defaultFormat:
+            self.saveAsVideo(setPreferences=True)
+            return
+
+        oldFileName = Path(self.currentImage).stem
+
+        newFileNameNoExtension = oldFileName + "_pixelized"
+        newFileName = newFileNameNoExtension + ".mp4"
+
+        fullPath = Path(defaultDirectory) / newFileName
+        if fullPath.exists():
+            msgBox = QMessageBox()
+            msgBox.setIcon(QMessageBox.Icon.Warning)
+            msgBox.setWindowTitle("File Already Exists")
+            msgBox.setText("There is already a file named " + newFileName + ". What do you want to do?")
+
+            overwriteButton = msgBox.addButton("Overwrite existing", QMessageBox.ButtonRole.DestructiveRole)
+            uniqueButton = msgBox.addButton("Save with new name", QMessageBox.ButtonRole.AcceptRole)
+            cancelButton = msgBox.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+
+            msgBox.exec()
+            clickedButton = msgBox.clickedButton()
+
+            if clickedButton == uniqueButton:
+                    counter = 1
+                    while True:
+                        testPath = Path(defaultDirectory) / (newFileNameNoExtension + "_" + str(counter) + "." + "mp4")
+                        if not testPath.exists():
+                            fullPath = testPath
+                            break
+                        counter += 1
+            elif clickedButton == cancelButton:
+                return
+
+        self.progressBar.setVisible(True)
+        self.progressBar.setValue(0)
+        self.toggleControls(False)
+
+        targetResolutionWidth = 0
+        targetResolutionHeight = 0
+        targetPalette = self.paletteDropdown.currentIndex()
+        targetColors = 0
+        tab = self.tabs.currentIndex()
+        match tab:
+            case 0:  # basic tab
+                targetResolutionWidth = self.resolutionSlider.value()
+                targetColors = self.colorSlider.value()
+            case 1:  # advanced tab
+                targetResolutionWidth = self.resolutionSpinBoxW.value()
+                targetResolutionHeight = self.resolutionSpinBoxH.value()
+                targetColors = self.colorSpinBox.value()
+
+        self.worker = video.VideoProcessing(self.currentImage, fullPath, targetResolutionWidth, targetResolutionHeight, targetPalette, targetColors)
+        self.worker.progress.connect(self.progressBar.setValue)
+        self.worker.finished.connect(self.onVideoFinished)
+        self.worker.start()
+
+
+    @Slot()
+    def toggleControls(self, state):
+        self.paletteDropdown.setEnabled(state)
+        self.tabs.setEnabled(state)
+
+    @Slot()
+    def onVideoFinished(self):
+        self.progressBar.setVisible(False)
+        self.toggleControls(True)
+
+        msgBox = QMessageBox()
+        msgBox.setIcon(QMessageBox.Icon.Information)
+        msgBox.setWindowTitle("Video Processing")
+        msgBox.setText("Video saved successfully. Full path: " + self.worker.finished.text())
+        msgBox.exec()
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
