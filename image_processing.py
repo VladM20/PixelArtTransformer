@@ -93,7 +93,7 @@ def dynamicPalette(img, maxColors):
         maxColors = pixels.shape[0]
 
     cv.setRNGSeed(289)
-
+    # noinspection PyTypeChecker
     _, colors, locations = cv.kmeans(pixels, maxColors,None, criteria, tries, cv.KMEANS_PP_CENTERS)
 
     locations = np.uint8(locations)
