@@ -9,6 +9,7 @@ import image_processing as image
 class VideoProcessing(QThread):
     progress = Signal(int)
     finished = Signal(str)
+    error = Signal(str)
 
     def __init__(self, inputPath, outputPath, newWidth, newHeight, palette, maxColors):
         super().__init__()
@@ -19,7 +20,8 @@ class VideoProcessing(QThread):
         self.palette = palette
         self.maxColors = maxColors
 
-        def run(self):
+    def run(self):
+        try:
             cap = cv.VideoCapture(self.inputPath)
             fps = cap.get(cv.CAP_PROP_FPS)
             totalFrames = int(cap.get(cv.CAP_PROP_FRAME_COUNT))
@@ -35,10 +37,11 @@ class VideoProcessing(QThread):
                 ret, frame = cap.read()
                 if not ret:
                     break
-
+                frame = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
                 frame = image.downscale(frame, self.newWidth, self.newHeight)
-                frame =  image.colorProcessing(frame, self.palette, self.maxColors)
+                frame = image.colorProcessing(frame, self.palette, self.maxColors)
                 frame = image.upscale(frame, width, height)
+                frame = cv.cvtColor(frame, cv.COLOR_RGB2BGR)
                 out.write(frame)
 
                 frameCount += 1
@@ -59,7 +62,7 @@ class VideoProcessing(QThread):
                 processedClip.write_videofile(self.outputPath, codec="libx264", audio_codec="aac")
             else:
                 import shutil
-                shutil.copy(out, self.outputPath)
+                shutil.copy(noSound, self.outputPath)
 
             originalClip.close()
             processedClip.close()
@@ -67,7 +70,8 @@ class VideoProcessing(QThread):
 
             self.progress.emit(100)
             self.finished.emit(self.outputPath)
-
+        except Exception as e:
+            self.error.emit(str(e))
 
 def getFirstValidFrame(videoPath):
     cap = cv.VideoCapture(videoPath)
