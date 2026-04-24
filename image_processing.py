@@ -78,7 +78,7 @@ def upscale(img, newWidth, newHeight, keepAspectRatio=False):
 def colorProcessing(img, palette=None, maxColors=None):
     if palette is None:
         return dynamicPalette(img, maxColors)
-    elif maxColors is None:
+    elif maxColors == 0:
         return fixedPalette(img,palette)
     else:
         return img
