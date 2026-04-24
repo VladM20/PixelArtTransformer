@@ -8,13 +8,14 @@ import video_processing as video
 from PySide6.QtGui import QIcon, QAction, QGuiApplication, QPixmap, Qt, QImage
 from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QSlider, QSpinBox, QMainWindow, \
     QHBoxLayout, QWidget, QFileDialog, QComboBox, QVBoxLayout, QTabWidget, QMessageBox, QDialog, QLineEdit, \
-    QDialogButtonBox
+    QDialogButtonBox, QProgressBar, QStyleFactory
 
 MIN_RESOLUTION = 4
 MAX_RESOLUTION = 512
 MIN_COLORS = 2
 MAX_COLORS = 32000
 MAX_SLIDER_COLORS = 256
+VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi"}
 
 class PreferencesDialog(QDialog):
     def __init__(self, parent=None):
@@ -86,6 +87,8 @@ class MainWindow(QMainWindow):
         self.preview.setStyleSheet("border: 1px solid gray;")
         self.preview.setPixmap(QPixmap("noimage_nobackground.png"))
         self.noImage = True
+        self.progressBar = QProgressBar()
+        self.progressBar.setVisible(False)
 
         # COLOR SETTINGS
         # palette dropdown
@@ -102,8 +105,6 @@ class MainWindow(QMainWindow):
 
         self.originalResolutionLabel = QLabel("Original Image Resolution: ")
         self.originalResolutionLabel.setStyleSheet("color: gray; font-size: 11px;")
-        self.originalColorLabel = QLabel()
-        self.originalColorLabel.setStyleSheet("color: gray; font-size: 11px;")
 
         # TAB SETTINGS
         self.tabs = QTabWidget()
@@ -191,17 +192,22 @@ class MainWindow(QMainWindow):
         uploadButton = QPushButton("Upload Image")
         uploadButton.clicked.connect(self.uploadImage)
 
+        # Upload Video button
+        uploadVideoButton =QPushButton("Upload Video")
+        uploadVideoButton.clicked.connect(self.uploadVideo)
+
         # Update Preview button
         processButton = QPushButton("Update Preview")
         processButton.clicked.connect(self.updatePreview)
 
         # Save button
         saveButton = QPushButton("Save")
-        saveButton.clicked.connect(self.saveAsImage)
+        saveButton.clicked.connect(self.saveAs)
 
         # buttons layed out horizontally
         buttonLayout = QHBoxLayout()
         buttonLayout.addWidget(uploadButton)
+        buttonLayout.addWidget(uploadVideoButton)
         buttonLayout.addWidget(processButton)
         buttonLayout.addWidget(saveButton)
 
@@ -210,7 +216,6 @@ class MainWindow(QMainWindow):
         # original image info
         originalInfoLayout = QHBoxLayout()
         originalInfoLayout.addWidget(self.originalResolutionLabel)
-        originalInfoLayout.addWidget(self.originalColorLabel)
         controlsLayout.addLayout(originalInfoLayout)
 
         controlsLayout.addWidget(QLabel("Color Palette: "))
@@ -223,7 +228,10 @@ class MainWindow(QMainWindow):
 
         # main layout
         MainLayout = QHBoxLayout()
-        MainLayout.addWidget(self.preview, stretch=3)
+        previewLayout = QVBoxLayout()
+        previewLayout.addWidget(self.preview)
+        previewLayout.addWidget(self.progressBar)
+        MainLayout.addLayout(previewLayout, stretch=3)
         MainLayout.addLayout(controlsLayout, stretch=1)
 
         container = QWidget()
@@ -236,20 +244,24 @@ class MainWindow(QMainWindow):
         menuBar = self.menuBar()
 
         fileMenu = menuBar.addMenu("&File")
-        actionOpen = QAction("&Open...", self)
+        actionOpen = QAction("&Open image...", self)
+        actionOpenVideo = QAction("Open video...", self)
         actionSave = QAction("&Save...", self)
         actionSaveAs = QAction("Save &as...", self)
 
         fileMenu.addAction(actionOpen)
+        fileMenu.addAction(actionOpenVideo)
         fileMenu.addAction(actionSave)
         fileMenu.addAction(actionSaveAs)
 
-        actionSave.triggered.connect(self.saveImage)
+        actionSave.triggered.connect(self.save)
         actionSave.setShortcut("Ctrl+S")
-        actionSaveAs.triggered.connect(self.saveAsImage)
+        actionSaveAs.triggered.connect(self.saveAs)
         actionSaveAs.setShortcut("Ctrl+Shift+S")
         actionOpen.triggered.connect(self.uploadImage)
         actionOpen.setShortcut("Ctrl+O")
+        actionOpenVideo.triggered.connect(self.uploadVideo)
+        actionOpenVideo.setShortcut("Ctrl+Shift+O")
 
         presetsMenu = menuBar.addMenu("&Presets")
         actionVGA = QAction("VGA (256 colors)", self)
@@ -281,10 +293,27 @@ class MainWindow(QMainWindow):
     def restoreImage(self):
         if self.noImage:
             return
-        pixmap = QPixmap(self.currentImage)
+        pixmap = self.QPixmapFromAny()
         self.preview.setPixmap(pixmap.scaled(self.preview.size(), Qt.AspectRatioMode.KeepAspectRatio))
         self.resolutionSpinBoxW.setValue(pixmap.width())
         self.resolutionSpinBoxH.setValue(pixmap.height())
+
+    def QPixmapFromAny(self):
+        extension = Path(self.currentImage).suffix.lower()
+
+        if extension in VIDEO_EXTENSIONS:
+            img = video.getFirstValidFrame(self.currentImage)
+            if img is None:
+                return
+
+            height, width, channels = img.shape
+            bytesPerLine = channels * width
+
+            pixmap = QPixmap.fromImage(QImage(img.data, width, height, bytesPerLine, QImage.Format.Format_RGB888))
+        else:
+            pixmap = QPixmap(self.currentImage)
+
+        return pixmap
 
     @Slot(int)
     def syncColorControls(self):
@@ -336,54 +365,79 @@ class MainWindow(QMainWindow):
         fileName, _ = QFileDialog.getOpenFileName(self, "Open File", filter="Images (*.jpg *.jpeg, *.png *.bmp)")
         if fileName:
             self.currentImage = fileName
-            pixmap = QPixmap(self.currentImage)
-            # set aspect ratio
-            self.originalAspectRatio = pixmap.width() / pixmap.height()
-            self.aspectRatio = self.originalAspectRatio
-            # set preview image
-            self.preview.setPixmap(pixmap.scaled(self.preview.size(), Qt.AspectRatioMode.KeepAspectRatio))
-            self.noImage = False
-
-            # set controls UI
-            self.originalResolutionLabel.setText("Original Resolution: " + str(pixmap.width()) + "x" + str(pixmap.height()))
-            self.originalColorLabel.setText(str(pixmap.depth()) + "-bit color depth")
-            self.lockRatioButton.blockSignals(True)
-            self.lockRatioButton.setChecked(True)       # blocking the lock ratio button from calling setLockRatio and
-            self.lockRatioButton.blockSignals(False)    # deleting the aspect ratio calculated above
-
-            self.setLockRatio(True)
+            self.uploadPreview()
 
     @Slot()
-    def updatePreview(self):
-        if self.noImage:
-            print("No Image Selected")
-            return None
+    def uploadVideo(self):
+        fileName, _ = QFileDialog.getOpenFileName(self, "Open File", filter="Video Files (*.mkv *.avi *.mp4)")
+        if fileName:
+            self.currentImage = fileName
+            self.uploadPreview()
+
+    # sets UI preview image based on self.currentImage, which needs to be set before calling this
+    def uploadPreview(self):
+        pixmap = self.QPixmapFromAny()
+        # set aspect ratio
+        self.originalAspectRatio = pixmap.width() / pixmap.height()
+        self.aspectRatio = self.originalAspectRatio
+        # set preview image
+        self.preview.setPixmap(pixmap.scaled(self.preview.size(), Qt.AspectRatioMode.KeepAspectRatio))
+        self.noImage = False
+
+        # set controls UI
+        self.originalResolutionLabel.setText("Original Resolution: " + str(pixmap.width()) + "x" + str(pixmap.height()))
+        self.lockRatioButton.blockSignals(True)
+        self.lockRatioButton.setChecked(True)  # blocking the lock ratio button from calling setLockRatio and
+        self.lockRatioButton.blockSignals(False)  # deleting the aspect ratio calculated above
+
+        self.setLockRatio(True)
+
+    def getParamsFromUI(self):
         targetResolutionWidth = 0
         targetResolutionHeight = 0
-        targetPalette = self.paletteDropdown.currentIndex()
+        targetPalette = str(self.paletteDropdown.currentText()).strip().lower()
         targetColors = 0
         tab = self.tabs.currentIndex()
+
+        match targetPalette:
+            case "ega (16 colors)":
+                targetPalette = image.EGA_16_color_palette
+            case "vga (256 colors)":
+                targetPalette = image.VGA_256_color_palette
+            case _:
+                targetPalette = None
+                targetColors = self.colorSlider.value()
+        #print("getParams: " + str(targetPalette))
+
         match tab:
             case 0: # basic tab
                 targetResolutionWidth = self.resolutionSlider.value()
-                targetColors = self.colorSlider.value()
+                targetResolutionHeight = int(self.resolutionSlider.value() / self.aspectRatio)
+
             case 1: # advanced tab
                 targetResolutionWidth = self.resolutionSpinBoxW.value()
                 targetResolutionHeight = self.resolutionSpinBoxH.value()
                 targetColors = self.colorSpinBox.value()
 
-        img = image.readImage(self.currentImage)
+        return targetResolutionWidth, targetResolutionHeight, targetPalette, targetColors
+
+    @Slot()
+    def updatePreview(self):
+        if self.noImage:
+            #print("No Image Selected")
+            return None
+        targetResolutionWidth, targetResolutionHeight, targetPalette, targetColors = self.getParamsFromUI()
+        fileType = Path(self.currentImage).suffix.lower()
+        if fileType in VIDEO_EXTENSIONS:
+            img = video.getFirstValidFrame(self.currentImage)
+        else:
+            img = image.readImage(self.currentImage)
+
         height, width, channels = img.shape
         img = image.downscale(img, targetResolutionWidth, targetResolutionHeight, keepAspectRatio=self.lockRatioButton.isChecked())
-        match targetPalette:
-            case 0:
-                img = image.colorProcessing(img,palette=image.EGA_16_color_palette, maxColors=None)
-            case 1:
-                img = image.colorProcessing(img, palette=image.VGA_256_color_palette, maxColors=None)
-            case 2:
-                img = image.colorProcessing(img, palette=None, maxColors=targetColors)
-
+        img = image.colorProcessing(img,palette=targetPalette, maxColors=targetColors)
         result = image.upscale(img, width, height, keepAspectRatio=self.lockRatioButton.isChecked())
+
         height, width, channels = result.shape
         bytesPerLine = channels * width
 
@@ -395,7 +449,7 @@ class MainWindow(QMainWindow):
     @Slot()
     def saveAsImage(self, setPreferences=False):
         if self.noImage:
-            print("No Image Selected")
+            #print("No Image Selected")
             return
         dir = str(Path(self.currentImage).stem) + "_pixelized"
         filePath, filter = QFileDialog.getSaveFileName(
@@ -420,7 +474,7 @@ class MainWindow(QMainWindow):
     @Slot()
     def saveImage(self):
         if self.noImage:
-            print("No Image Selected")
+            #print("No Image Selected")
             return
         # read preferences
         settings = QSettings("PixelArtTransformer", "Settings")
@@ -436,19 +490,9 @@ class MainWindow(QMainWindow):
         newFileName = oldFileName + "_pixelized" + defaultFormat
         fullPath = Path(defaultDirectory) / newFileName
         if fullPath.exists():
-            msgBox = QMessageBox()
-            msgBox.setIcon(QMessageBox.Icon.Warning)
-            msgBox.setWindowTitle("File Already Exists")
-            msgBox.setText("There is already a file named " + newFileName + ". What do you want to do?")
+            clickedButton = self.fileExistsMsgBox(newFileName)
 
-            overwriteButton = msgBox.addButton("Overwrite existing", QMessageBox.ButtonRole.DestructiveRole)
-            uniqueButton = msgBox.addButton("Save with new name", QMessageBox.ButtonRole.AcceptRole)
-            cancelButton = msgBox.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
-
-            msgBox.exec()
-            clickedButton = msgBox.clickedButton()
-
-            if clickedButton == uniqueButton:
+            if clickedButton == "unique":
                     counter = 1
                     while True:
                         testPath = Path(defaultDirectory) / (newFileName + "_" + str(counter) + "." + defaultFormat)
@@ -456,10 +500,23 @@ class MainWindow(QMainWindow):
                             fullPath = testPath
                             break
                         counter += 1
-            elif clickedButton == cancelButton:
+            elif clickedButton == "cancel":
                 return
 
         self.updatePreview().save(str(fullPath))
+
+    def startVideoProcessing(self,outputPath):
+        self.progressBar.setVisible(True)
+        self.progressBar.setValue(0)
+        self.toggleControls(False)
+
+        targetResolutionWidth, targetResolutionHeight, targetPalette, targetColors = self.getParamsFromUI()
+
+        self.worker = video.VideoProcessing(self.currentImage, outputPath, targetResolutionWidth, targetResolutionHeight, targetPalette, targetColors)
+        self.worker.progress.connect(self.progressBar.setValue)
+        self.worker.finished.connect(self.onVideoFinished)
+        self.worker.error.connect(self.onVideoError)
+        self.worker.start()
 
     @Slot()
     def saveAsVideo(self, setPreferences=False):
@@ -472,28 +529,8 @@ class MainWindow(QMainWindow):
             dir,
             "MP4 (*.mp4);;All Files (*.*)"
         )
-        self.progressBar.setVisible(True)
-        self.progressBar.setValue(0)
-        self.toggleControls(False)
 
-        targetResolutionWidth = 0
-        targetResolutionHeight = 0
-        targetPalette = self.paletteDropdown.currentIndex()
-        targetColors = 0
-        tab = self.tabs.currentIndex()
-        match tab:
-            case 0: # basic tab
-                targetResolutionWidth = self.resolutionSlider.value()
-                targetColors = self.colorSlider.value()
-            case 1: # advanced tab
-                targetResolutionWidth = self.resolutionSpinBoxW.value()
-                targetResolutionHeight = self.resolutionSpinBoxH.value()
-                targetColors = self.colorSpinBox.value()
-
-        self.worker = video.VideoProcessing(self.currentImage, dir, targetResolutionWidth, targetResolutionHeight, targetPalette, targetColors)
-        self.worker.progress.connect(self.progressBar.setValue)
-        self.worker.finished.connect(self.onVideoFinished)
-        self.worker.start()
+        self.startVideoProcessing(filePath)
 
         if filePath:
 
@@ -524,19 +561,9 @@ class MainWindow(QMainWindow):
 
         fullPath = Path(defaultDirectory) / newFileName
         if fullPath.exists():
-            msgBox = QMessageBox()
-            msgBox.setIcon(QMessageBox.Icon.Warning)
-            msgBox.setWindowTitle("File Already Exists")
-            msgBox.setText("There is already a file named " + newFileName + ". What do you want to do?")
+            clickedButton = self.fileExistsMsgBox(newFileName)
 
-            overwriteButton = msgBox.addButton("Overwrite existing", QMessageBox.ButtonRole.DestructiveRole)
-            uniqueButton = msgBox.addButton("Save with new name", QMessageBox.ButtonRole.AcceptRole)
-            cancelButton = msgBox.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
-
-            msgBox.exec()
-            clickedButton = msgBox.clickedButton()
-
-            if clickedButton == uniqueButton:
+            if clickedButton == "unique":
                     counter = 1
                     while True:
                         testPath = Path(defaultDirectory) / (newFileNameNoExtension + "_" + str(counter) + "." + "mp4")
@@ -544,48 +571,74 @@ class MainWindow(QMainWindow):
                             fullPath = testPath
                             break
                         counter += 1
-            elif clickedButton == cancelButton:
+            elif clickedButton == "cancel":
                 return
 
-        self.progressBar.setVisible(True)
-        self.progressBar.setValue(0)
-        self.toggleControls(False)
+        self.startVideoProcessing(fullPath)
 
-        targetResolutionWidth = 0
-        targetResolutionHeight = 0
-        targetPalette = self.paletteDropdown.currentIndex()
-        targetColors = 0
-        tab = self.tabs.currentIndex()
-        match tab:
-            case 0:  # basic tab
-                targetResolutionWidth = self.resolutionSlider.value()
-                targetColors = self.colorSlider.value()
-            case 1:  # advanced tab
-                targetResolutionWidth = self.resolutionSpinBoxW.value()
-                targetResolutionHeight = self.resolutionSpinBoxH.value()
-                targetColors = self.colorSpinBox.value()
+    def fileExistsMsgBox(self, newFileName):
+        msgBox = QMessageBox(self)
+        msgBox.setIcon(QMessageBox.Icon.Warning)
+        msgBox.setWindowTitle("File Already Exists")
+        msgBox.setText("There is already a file named " + newFileName + ". What do you want to do?")
 
-        self.worker = video.VideoProcessing(self.currentImage, fullPath, targetResolutionWidth, targetResolutionHeight, targetPalette, targetColors)
-        self.worker.progress.connect(self.progressBar.setValue)
-        self.worker.finished.connect(self.onVideoFinished)
-        self.worker.start()
+        msgBox.addButton("Overwrite existing", QMessageBox.ButtonRole.DestructiveRole)
+        uniqueButton = msgBox.addButton("Save with new name", QMessageBox.ButtonRole.AcceptRole)
+        cancelButton = msgBox.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
 
+        msgBox.exec()
+        clickedButton = msgBox.clickedButton()
+        if clickedButton == uniqueButton:
+            return "unique"
+        elif clickedButton == cancelButton:
+            return "cancel"
+        else:
+            return "overwrite"
 
     @Slot()
     def toggleControls(self, state):
         self.paletteDropdown.setEnabled(state)
         self.tabs.setEnabled(state)
 
-    @Slot()
-    def onVideoFinished(self):
+    @Slot(str)
+    def onVideoFinished(self, path):
         self.progressBar.setVisible(False)
         self.toggleControls(True)
 
         msgBox = QMessageBox()
         msgBox.setIcon(QMessageBox.Icon.Information)
         msgBox.setWindowTitle("Video Processing")
-        msgBox.setText("Video saved successfully. Full path: " + self.worker.finished.text())
+        msgBox.setText("Video saved successfully. Full path: " + path)
         msgBox.exec()
+
+    @Slot(str)
+    def onVideoError(self, error):
+        self.progressBar.setVisible(True)
+        self.toggleControls(True)
+        msgBox = QMessageBox()
+        msgBox.setIcon(QMessageBox.Icon.Warning)
+        msgBox.setWindowTitle("Video Processing Error")
+        msgBox.setText("Error during video processing. Full message:\n\n" + error)
+        msgBox.exec()
+
+    def save(self):
+        if self.noImage:
+            return
+        if Path(self.currentImage).suffix.lower() in VIDEO_EXTENSIONS:
+            self.saveVideo()
+        else:
+            self.saveImage()
+
+    @Slot()
+    def saveAs(self):
+        if self.noImage:
+            return
+        if Path(self.currentImage).suffix.lower() in VIDEO_EXTENSIONS:
+            self.saveAsVideo()
+        else:
+            self.saveAsImage()
+
+
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
