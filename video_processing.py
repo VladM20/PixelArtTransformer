@@ -59,7 +59,7 @@ class VideoProcessing(QThread):
 
             if originalClip.audio is not None:
                 processedClip.audio = originalClip.audio
-                processedClip.write_videofile(self.outputPath, codec="libx264", audio_codec="aac")
+                processedClip.write_videofile(self.outputPath, codec="libx264", audio_codec="aac", logger=None)
             else:
                 import shutil
                 shutil.copy(noSound, self.outputPath)
