@@ -378,6 +378,10 @@ class MainWindow(QMainWindow):
     @Slot()
     def uploadVideo(self):
         fileName, _ = QFileDialog.getOpenFileName(self, "Open File", filter="Video Files (*.mkv *.avi *.mp4)")
+        # TODO: Implement logic to make temp copy for working with video instead of asking user to rename file
+        if not fileName.isascii():
+            QMessageBox.critical(self, "Invalid Video", "The selected video file contains invalid characters. Please rename the video and try again.")
+            return
         if fileName:
             self.currentImage = fileName
             self.uploadPreview()
@@ -448,9 +452,9 @@ class MainWindow(QMainWindow):
             img = image.readImage(self.currentImage)
 
         height, width, channels = img.shape
-        img = image.downscale(img, targetResolutionWidth, targetResolutionHeight, keepAspectRatio=self.lockRatioButton.isChecked())
+        img = image.downscale(img, targetResolutionWidth, targetResolutionHeight)
         img = image.colorProcessing(img,palette=targetPalette, maxColors=targetColors)
-        result = image.upscale(img, width, height, keepAspectRatio=self.lockRatioButton.isChecked())
+        result = image.upscale(img, width, height)
 
         height, width, channels = result.shape
         bytesPerLine = channels * width
