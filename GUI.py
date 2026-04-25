@@ -1,3 +1,4 @@
+import os
 import sys
 
 from pathlib import Path
@@ -16,6 +17,14 @@ MIN_COLORS = 2
 MAX_COLORS = 32000
 MAX_SLIDER_COLORS = 256
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi"}
+
+# function that fixes relative paths not found when the app is compiled in an executable
+def resourcePath(relativePath):
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        basePath = Path(sys._MEIPASS)
+    else:
+        basePath = Path(__file__).parent
+    return str(basePath / relativePath)
 
 class PreferencesDialog(QDialog):
     def __init__(self, parent=None):
@@ -77,13 +86,13 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Pixel Art Transformer")
         # noinspection PyTypeChecker
         self.resize(QGuiApplication.primaryScreen().availableSize()*3/5)
-        self.setWindowIcon(QIcon("icon_pixelized.png"))
+        self.setWindowIcon(QIcon(resourcePath("icon_pixelized.png")))
         # preview area
         self.preview = QLabel("<b>No image loaded</b>")
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview.setMinimumSize(QSize(400, 300))
         self.preview.setStyleSheet("border: 1px solid gray;")
-        self.preview.setPixmap(QPixmap("noimage_nobackground.png"))
+        self.preview.setPixmap(QPixmap(resourcePath("noimage_nobackground.png")))
         self.noImage = True
         self.progressBar = QProgressBar()
         self.progressBar.setVisible(False)
