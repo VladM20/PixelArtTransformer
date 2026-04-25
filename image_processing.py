@@ -56,7 +56,7 @@ def hex2rgb(hex):
 # noinspection PyTypeChecker,PyShadowingNames
 def readImage(filePath):
     # reading the image with np to prevent Unicode characters from breaking the reading process
-    file_bytes = np.fromFile(filePath, dtype=np.uint8)
+    file_bytes = np.fromfile(filePath, dtype=np.uint8)
     img = cv.imdecode(file_bytes, cv.IMREAD_COLOR)
     if img is None:
         raise Exception("No image")
