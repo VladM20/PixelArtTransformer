@@ -69,8 +69,6 @@ class PreferencesDialog(QDialog):
         if directory:
             self.directoryEdit.setText(directory)
 
-# TODO create UI for video processing
-
 # noinspection PyUnresolvedReferences
 class MainWindow(QMainWindow):
     def __init__(self, parent=None):
@@ -79,7 +77,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Pixel Art Transformer")
         # noinspection PyTypeChecker
         self.resize(QGuiApplication.primaryScreen().availableSize()*3/5)
-        
+        self.setWindowIcon(QIcon("icon_pixelized.png"))
         # preview area
         self.preview = QLabel("<b>No image loaded</b>")
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -177,7 +175,7 @@ class MainWindow(QMainWindow):
         self.colorSpinBox = QSpinBox()
         self.colorSpinBox.setRange(MIN_COLORS, MAX_COLORS)
         self.colorSpinBox.setValue(16)
-        self.colorSpinBox.editingFinished.connect(self.syncColorControls)
+        self.colorSpinBox.valueChanged.connect(self.syncColorControls)
         advancedColorLayout.addWidget(self.colorSpinBox)
 
         self.advancedColorWidget.setEnabled(False)
@@ -239,6 +237,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(container)
         self.createMenuBar()
         self.currentImage = None
+        self.toggleControls(False)
 
     def createMenuBar(self):
         menuBar = self.menuBar()
@@ -377,6 +376,12 @@ class MainWindow(QMainWindow):
     # sets UI preview image based on self.currentImage, which needs to be set before calling this
     def uploadPreview(self):
         pixmap = self.QPixmapFromAny()
+        if pixmap is None:
+            QMessageBox.critical(self, "Invalid Video", "The selected video file is invalid, empty or has no visible frames to process. Upload cancelled.")
+            self.currentImage = None
+            self.preview.setPixmap(QPixmap("noimage_nobackground.png"))
+            self.toggleControls(False)
+            return
         # set aspect ratio
         self.originalAspectRatio = pixmap.width() / pixmap.height()
         self.aspectRatio = self.originalAspectRatio
@@ -389,7 +394,7 @@ class MainWindow(QMainWindow):
         self.lockRatioButton.blockSignals(True)
         self.lockRatioButton.setChecked(True)  # blocking the lock ratio button from calling setLockRatio and
         self.lockRatioButton.blockSignals(False)  # deleting the aspect ratio calculated above
-
+        self.toggleControls(True)
         self.setLockRatio(True)
 
     def getParamsFromUI(self):
@@ -441,7 +446,7 @@ class MainWindow(QMainWindow):
         height, width, channels = result.shape
         bytesPerLine = channels * width
 
-        QImg = QImage(result.data, width, height, bytesPerLine, QImage.Format.Format_RGB888)
+        QImg = QImage(result.data, width, height, bytesPerLine, QImage.Format.Format_RGB888).copy()
         pixmap = QPixmap.fromImage(QImg)
         self.preview.setPixmap(pixmap.scaled(self.preview.size(), Qt.AspectRatioMode.KeepAspectRatio))
         return QImg
@@ -458,6 +463,7 @@ class MainWindow(QMainWindow):
             dir,
             "PNG (*.png);;JPEG (*.jpg *.jpeg);;BMP (*.bmp);;All Files (*.*)"
         )
+        print("saveAsImage: " + str(filePath))
         if filePath:
             self.updatePreview().save(str(filePath))
             # save default save directory and format
@@ -470,11 +476,11 @@ class MainWindow(QMainWindow):
                 saveFormat = Path(filePath).suffix
                 settings.setValue("default_save_format", saveFormat)
 
-
+    # TODO Nu merge
     @Slot()
     def saveImage(self):
         if self.noImage:
-            #print("No Image Selected")
+            print("No Image Selected")
             return
         # read preferences
         settings = QSettings("PixelArtTransformer", "Settings")
@@ -487,8 +493,8 @@ class MainWindow(QMainWindow):
 
         oldFileName = Path(self.currentImage).stem
 
-        newFileName = oldFileName + "_pixelized" + defaultFormat
-        fullPath = Path(defaultDirectory) / newFileName
+        newFileName = oldFileName + "_pixelized"
+        fullPath = Path(defaultDirectory) / (newFileName + "." + defaultFormat)
         if fullPath.exists():
             clickedButton = self.fileExistsMsgBox(newFileName)
 
@@ -502,7 +508,7 @@ class MainWindow(QMainWindow):
                         counter += 1
             elif clickedButton == "cancel":
                 return
-
+        print("saveImage: " + str(fullPath))
         self.updatePreview().save(str(fullPath))
 
     def startVideoProcessing(self,outputPath):
@@ -574,7 +580,7 @@ class MainWindow(QMainWindow):
             elif clickedButton == "cancel":
                 return
 
-        self.startVideoProcessing(fullPath)
+        self.startVideoProcessing(str(fullPath))
 
     def fileExistsMsgBox(self, newFileName):
         msgBox = QMessageBox(self)
