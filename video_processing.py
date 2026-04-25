@@ -1,8 +1,8 @@
 import cv2 as cv
 import numpy as np
+from pathlib import Path
 from PySide6.QtCore import QThread, Signal
 from moviepy import VideoFileClip
-import os
 import tempfile
 import image_processing as image
 
@@ -28,9 +28,9 @@ class VideoProcessing(QThread):
             width = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
             height = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
 
-            noSound = os.path.join(tempfile.gettempdir(), "noSound.mp4")
+            tempFile = Path(tempfile.gettempdir()) / "noSound.mp4"
             fourcc = cv.VideoWriter.fourcc(*"mp4v")
-            out = cv.VideoWriter(noSound, fourcc, fps, (width, height))
+            out = cv.VideoWriter(str(tempFile), fourcc, fps, (width, height))
 
             frameCount = 0
             while cap.isOpened():
@@ -54,19 +54,19 @@ class VideoProcessing(QThread):
             out.release()
 
             self.progress.emit(85)
-            originalClip = VideoFileClip(self.inputPath)
-            processedClip = VideoFileClip(noSound)
+            originalClip = VideoFileClip(str(self.inputPath))
+            processedClip = VideoFileClip(str(tempFile))
 
             if originalClip.audio is not None:
                 processedClip.audio = originalClip.audio
-                processedClip.write_videofile(self.outputPath, codec="libx264", audio_codec="aac", logger=None)
+                processedClip.write_videofile(str(self.outputPath), codec="libx264", audio_codec="aac", logger=None)
             else:
                 import shutil
-                shutil.copy(noSound, self.outputPath)
+                shutil.copy(str(tempFile), str(self.outputPath))
 
             originalClip.close()
             processedClip.close()
-            os.remove(noSound)
+            tempFile.unlink(missing_ok=True)
 
             self.progress.emit(100)
             self.finished.emit(self.outputPath)
