@@ -88,11 +88,13 @@ def colorProcessing(img, palette=None, maxColors=None):
 def dynamicPalette(img, maxColors):
     pixels = img.reshape(-1,3).astype(np.float32)
     tries = 10
-
+    # max_iterations = 10
+    # epsilon = 1.0
     criteria = (cv.TermCriteria_EPS + cv.TermCriteria_MAX_ITER, 10, 1.0)
-
-    if maxColors > pixels.shape[0]:
-        maxColors = pixels.shape[0]
+    maxDimension = max(pixels.shape)
+    #print(maxDimension, pixels.shape, maxColors)
+    if maxColors > maxDimension:
+        maxColors = maxDimension
 
     cv.setRNGSeed(289)
     # noinspection PyTypeChecker
