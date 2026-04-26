@@ -1,4 +1,3 @@
-import os
 import sys
 
 from pathlib import Path
@@ -9,7 +8,7 @@ import video_processing as video
 from PySide6.QtGui import QIcon, QAction, QGuiApplication, QPixmap, Qt, QImage
 from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QSlider, QSpinBox, QMainWindow, \
     QHBoxLayout, QWidget, QFileDialog, QComboBox, QVBoxLayout, QTabWidget, QMessageBox, QDialog, QLineEdit, \
-    QDialogButtonBox, QProgressBar, QStyleFactory
+    QDialogButtonBox, QProgressBar
 
 MIN_RESOLUTION = 4
 MAX_RESOLUTION = 512
@@ -86,7 +85,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Pixel Art Transformer")
         # noinspection PyTypeChecker
         self.resize(QGuiApplication.primaryScreen().availableSize()*3/5)
-        self.setWindowIcon(QIcon(resourcePath("icon_pixelized.png")))
+        self.setWindowIcon(QIcon(resourcePath("favicon.ico")))
         # preview area
         self.preview = QLabel("<b>No image loaded</b>")
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -312,7 +311,7 @@ class MainWindow(QMainWindow):
         if extension in VIDEO_EXTENSIONS:
             img = video.getFirstValidFrame(self.currentImage)
             if img is None:
-                return
+                return None
 
             height, width, channels = img.shape
             bytesPerLine = channels * width
@@ -424,18 +423,20 @@ class MainWindow(QMainWindow):
                 targetPalette = image.VGA_256_color_palette
             case _:
                 targetPalette = None
-                targetColors = self.colorSlider.value()
         #print("getParams: " + str(targetPalette))
 
         match tab:
             case 0: # basic tab
                 targetResolutionWidth = self.resolutionSlider.value()
                 targetResolutionHeight = int(self.resolutionSlider.value() / self.aspectRatio)
+                if targetPalette is None:
+                    targetColors = self.colorSlider.value()
 
             case 1: # advanced tab
                 targetResolutionWidth = self.resolutionSpinBoxW.value()
                 targetResolutionHeight = self.resolutionSpinBoxH.value()
-                targetColors = self.colorSpinBox.value()
+                if targetPalette is None:
+                    targetColors = self.colorSpinBox.value()
 
         return targetResolutionWidth, targetResolutionHeight, targetPalette, targetColors
 
