@@ -5,6 +5,7 @@ from PySide6.QtCore import QThread, Signal
 from moviepy import VideoFileClip
 import tempfile
 import image_processing as image
+import shutil
 
 class VideoProcessing(QThread):
     progress = Signal(int)
@@ -61,7 +62,6 @@ class VideoProcessing(QThread):
                 processedClip.audio = originalClip.audio
                 processedClip.write_videofile(str(self.outputPath), codec="libx264", audio_codec="aac", logger=None)
             else:
-                import shutil
                 shutil.copy(str(tempFile), str(self.outputPath))
 
             originalClip.close()
