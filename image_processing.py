@@ -87,7 +87,7 @@ def colorProcessing(img, palette=None, maxColors=None):
 
 def dynamicPalette(img, maxColors):
     pixels = img.reshape(-1,3).astype(np.float32)
-    tries = 10
+    attempts = 10
     # max_iterations = 10
     # epsilon = 1.0
     criteria = (cv.TermCriteria_EPS + cv.TermCriteria_MAX_ITER, 10, 1.0)
@@ -98,10 +98,10 @@ def dynamicPalette(img, maxColors):
 
     cv.setRNGSeed(289)
     # noinspection PyTypeChecker
-    _, colors, locations = cv.kmeans(pixels, maxColors,None, criteria, tries, cv.KMEANS_PP_CENTERS)
+    _, labels, centers = cv.kmeans(pixels, maxColors,None, criteria, attempts, cv.KMEANS_PP_CENTERS)
 
-    locations = np.uint8(locations)
-    result = locations[colors.flatten()]
+    centers = np.uint8(centers)
+    result = centers[labels.flatten()]
     imgResult = result.reshape(img.shape)
     return imgResult
 
