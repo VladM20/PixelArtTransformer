@@ -77,7 +77,8 @@ def upscale(img, newWidth, newHeight, keepAspectRatio=False):
     img_large = cv.resize(img,(newWidth, newHeight),interpolation=cv.INTER_NEAREST_EXACT)
     return img_large
 
-def colorProcessing(img, palette=None, maxColors=None):
+def colorProcessing(img, palette=None, maxColors=None, saturation=1.0):
+    img = applySaturation(img, saturation)
     if palette is None:
         return dynamicPalette(img, maxColors)
     elif maxColors == 0:
@@ -119,3 +120,16 @@ def fixedPalette(img, palette):
     new_pixels = palette[new_colors]
     new_img = new_pixels.reshape((height, width, channels))
     return new_img.astype(np.uint8)
+
+def applySaturation(img, saturation=1.0):
+    if saturation == 1.0:
+        return img
+
+    img_float = img.astype(np.float32) / 255.0
+    hsv_img = cv.cvtColor(img_float, cv.COLOR_RGB2HSV)
+
+    hsv_img[:, :, 1] = hsv_img[:, :, 1] * saturation
+    hsv_img[:, :, 1] = np.clip(hsv_img[:, :, 1], 0.0, 1.0)
+
+    rgb_float = cv.cvtColor(hsv_img, cv.COLOR_HSV2RGB)
+    return (rgb_float * 255.0).astype(np.uint8)

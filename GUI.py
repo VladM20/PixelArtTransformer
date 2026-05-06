@@ -15,6 +15,8 @@ MAX_RESOLUTION = 512
 MIN_COLORS = 2
 MAX_COLORS = 32000
 MAX_SLIDER_COLORS = 256
+MIN_SATURATION = 0
+MAX_SATURATION = 300
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi"}
 
 # function that fixes relative paths not found when the app is compiled in an executable
@@ -118,13 +120,25 @@ class MainWindow(QMainWindow):
         # BASIC TAB
         basicTab = QWidget()
         basicLayout = QVBoxLayout(basicTab)
+
         # resolution
         basicLayout.addWidget(QLabel("Quality: "))
         self.resolutionSlider = QSlider(Qt.Orientation.Horizontal)
         self.resolutionSlider.setRange(MIN_RESOLUTION, MAX_RESOLUTION)
         self.resolutionSlider.setValue(100)
-        self.resolutionSlider.sliderReleased.connect(self.syncResolutionControls)
+        self.resolutionSlider.setTracking(False)
+        self.resolutionSlider.valueChanged.connect(self.syncResolutionControls)
         basicLayout.addWidget(self.resolutionSlider)
+
+        # saturation
+        basicLayout.addWidget(QLabel("Saturation: "))
+        self.saturationSlider = QSlider(Qt.Orientation.Horizontal)
+        self.saturationSlider.setRange(MIN_SATURATION, MAX_SATURATION)
+        self.saturationSlider.setValue(100)
+        self.saturationSlider.setTracking(False)
+        self.saturationSlider.valueChanged.connect(self.syncColorControls)
+        basicLayout.addWidget(self.saturationSlider)
+
         # colors
         self.basicColorWidget = QWidget()
         basicColorLayout = QVBoxLayout(self.basicColorWidget)
@@ -132,7 +146,8 @@ class MainWindow(QMainWindow):
         self.colorSlider = QSlider(Qt.Orientation.Horizontal)
         self.colorSlider.setRange(MIN_COLORS, MAX_SLIDER_COLORS)
         self.colorSlider.setValue(16)
-        self.colorSlider.sliderReleased.connect(self.syncColorControls)
+        self.colorSlider.setTracking(False)
+        self.colorSlider.valueChanged.connect(self.syncColorControls)
         basicColorLayout.addWidget(self.colorSlider)
 
         self.basicColorWidget.setEnabled(False)
@@ -142,14 +157,17 @@ class MainWindow(QMainWindow):
         # ADVANCED TAB
         advancedTab = QWidget()
         advancedLayout = QVBoxLayout(advancedTab)
+
         # resolution
         advancedLayout.addWidget(QLabel("Resolution: "))
         resolutionLayout = QHBoxLayout()
+
         # resolution width spinbox
         self.resolutionSpinBoxW = QSpinBox()
         self.resolutionSpinBoxW.setRange(MIN_RESOLUTION, 10*MAX_RESOLUTION)
         self.resolutionSpinBoxW.setValue(100)
         self.resolutionSpinBoxW.valueChanged.connect(self.syncResolutionControls)
+
         # resolution height spinbox
         self.resolutionSpinBoxH = QSpinBox()
         self.resolutionSpinBoxH.setRange(MIN_RESOLUTION, 10*MAX_RESOLUTION)
@@ -176,14 +194,24 @@ class MainWindow(QMainWindow):
         resolutionLayout.addWidget(self.lockRatioButton)
         resolutionLayout.addWidget(self.restoreButton)
         advancedLayout.addLayout(resolutionLayout)
+        # saturation
+        self.saturationSpinBox = QSpinBox()
+        self.saturationSpinBox.setRange(MIN_SATURATION, MAX_SATURATION)
+        self.saturationSpinBox.setValue(100)
+        self.saturationSpinBox.valueChanged.connect(self.syncColorControls)
+        saturationLayout = QHBoxLayout()
+        saturationLayout.addWidget(QLabel("Saturation: "))
+        saturationLayout.addWidget(self.saturationSpinBox)
+        advancedLayout.addLayout(saturationLayout)
 
         # color
         self.advancedColorWidget = QWidget()
-        advancedColorLayout = QVBoxLayout(self.advancedColorWidget)
+        advancedColorLayout = QHBoxLayout(self.advancedColorWidget)
         self.colorSpinBox = QSpinBox()
         self.colorSpinBox.setRange(MIN_COLORS, MAX_COLORS)
         self.colorSpinBox.setValue(16)
         self.colorSpinBox.valueChanged.connect(self.syncColorControls)
+        advancedColorLayout.addWidget(QLabel("Number of colors: "))
         advancedColorLayout.addWidget(self.colorSpinBox)
 
         self.advancedColorWidget.setEnabled(False)
@@ -328,11 +356,23 @@ class MainWindow(QMainWindow):
             self.colorSpinBox.blockSignals(True)
             self.colorSpinBox.setValue(self.colorSlider.value())
             self.colorSpinBox.blockSignals(False)
+
         if self.sender() == self.colorSpinBox:
             self.colorSlider.blockSignals(True)
             value = min(MAX_SLIDER_COLORS, self.colorSpinBox.value())
             self.colorSlider.setValue(value)
             self.colorSlider.blockSignals(False)
+
+        if self.sender() == self.saturationSlider:
+            self.saturationSpinBox.blockSignals(True)
+            self.saturationSpinBox.setValue(self.saturationSlider.value())
+            self.saturationSpinBox.blockSignals(False)
+
+        if self.sender() == self.saturationSpinBox:
+            self.saturationSlider.blockSignals(True)
+            self.saturationSlider.setValue(self.saturationSpinBox.value())
+            self.saturationSlider.blockSignals(False)
+
         self.updatePreview()
 
     @Slot(int)
@@ -400,20 +440,26 @@ class MainWindow(QMainWindow):
         # set preview image
         self.preview.setPixmap(pixmap.scaled(self.preview.size(), Qt.AspectRatioMode.KeepAspectRatio))
         self.noImage = False
-
-        # set controls UI
         self.originalResolutionLabel.setText("Original Resolution: " + str(pixmap.width()) + "x" + str(pixmap.height()))
+        self.resolutionSlider.setValue(int(pixmap.width() / 4))
+        self.resetControls()
+
+
+    def resetControls(self):
+        # set controls UI
         self.lockRatioButton.blockSignals(True)
         self.lockRatioButton.setChecked(True)  # blocking the lock ratio button from calling setLockRatio and
         self.lockRatioButton.blockSignals(False)  # deleting the aspect ratio calculated above
         self.toggleControls(True)
         self.setLockRatio(True)
 
+
     def getParamsFromUI(self):
         targetResolutionWidth = 0
         targetResolutionHeight = 0
         targetPalette = str(self.paletteDropdown.currentText()).strip().lower()
         targetColors = 0
+        targetSaturation = 1.0
         tab = self.tabs.currentIndex()
 
         match targetPalette:
@@ -429,23 +475,25 @@ class MainWindow(QMainWindow):
             case 0: # basic tab
                 targetResolutionWidth = self.resolutionSlider.value()
                 targetResolutionHeight = int(self.resolutionSlider.value() / self.aspectRatio)
+                targetSaturation = float(self.saturationSlider.value()) / 100.0
                 if targetPalette is None:
                     targetColors = self.colorSlider.value()
 
             case 1: # advanced tab
                 targetResolutionWidth = self.resolutionSpinBoxW.value()
                 targetResolutionHeight = self.resolutionSpinBoxH.value()
+                targetSaturation = float(self.saturationSpinBox.value()) / 100.0
                 if targetPalette is None:
                     targetColors = self.colorSpinBox.value()
 
-        return targetResolutionWidth, targetResolutionHeight, targetPalette, targetColors
+        return targetResolutionWidth, targetResolutionHeight, targetPalette, targetColors, targetSaturation
 
     @Slot()
     def updatePreview(self):
         if self.noImage:
             #print("No Image Selected")
             return None
-        targetResolutionWidth, targetResolutionHeight, targetPalette, targetColors = self.getParamsFromUI()
+        targetResolutionWidth, targetResolutionHeight, targetPalette, targetColors, targetSaturation = self.getParamsFromUI()
         fileType = Path(self.currentImage).suffix.lower()
         if fileType in VIDEO_EXTENSIONS:
             img = video.getFirstValidFrame(self.currentImage)
@@ -454,7 +502,7 @@ class MainWindow(QMainWindow):
 
         height, width, channels = img.shape
         img = image.downscale(img, targetResolutionWidth, targetResolutionHeight)
-        img = image.colorProcessing(img,palette=targetPalette, maxColors=targetColors)
+        img = image.colorProcessing(img,palette=targetPalette, maxColors=targetColors, saturation=targetSaturation)
         result = image.upscale(img, width, height)
 
         height, width, channels = result.shape
@@ -490,7 +538,6 @@ class MainWindow(QMainWindow):
                 saveFormat = Path(filePath).suffix
                 settings.setValue("default_save_format", saveFormat)
 
-    # TODO Nu merge
     @Slot()
     def saveImage(self):
         if self.noImage:
