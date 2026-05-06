@@ -1,4 +1,5 @@
 import sys
+from asyncio.windows_events import NULL
 
 from pathlib import Path
 from PySide6.QtCore import QSize, Slot, QSettings
@@ -18,6 +19,7 @@ MAX_SLIDER_COLORS = 256
 MIN_SATURATION = 0
 MAX_SATURATION = 300
 VIDEO_EXTENSIONS = {".mp4", ".mkv", ".avi"}
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp"}
 
 # function that fixes relative paths not found when the app is compiled in an executable
 def resourcePath(relativePath):
@@ -224,11 +226,11 @@ class MainWindow(QMainWindow):
         # buttons
         # Upload Image button
         uploadButton = QPushButton("Upload Image")
-        uploadButton.clicked.connect(self.uploadImage)
+        uploadButton.clicked.connect(self.uploadFile)
 
         # Upload Video button
         uploadVideoButton =QPushButton("Upload Video")
-        uploadVideoButton.clicked.connect(self.uploadVideo)
+        uploadVideoButton.clicked.connect(self.uploadFile)
 
         # Update Preview button
         processButton = QPushButton("Update Preview")
@@ -274,6 +276,26 @@ class MainWindow(QMainWindow):
         self.createMenuBar()
         self.currentImage = None
         self.toggleControls(False)
+        self.setAcceptDrops(True)
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.accept()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        urls = event.mimeData().urls()
+        filePath = None
+        if urls:
+            filePath = urls[0].toLocalFile()
+
+        validExtensions = IMAGE_EXTENSIONS.union(VIDEO_EXTENSIONS)
+        if any(filePath.lower().endswith(ext) for ext in validExtensions):
+            self.currentImage = filePath
+            self.verifyVideo()
+            self.uploadPreview()
+
 
     def createMenuBar(self):
         menuBar = self.menuBar()
@@ -293,9 +315,9 @@ class MainWindow(QMainWindow):
         actionSave.setShortcut("Ctrl+S")
         actionSaveAs.triggered.connect(self.saveAs)
         actionSaveAs.setShortcut("Ctrl+Shift+S")
-        actionOpen.triggered.connect(self.uploadImage)
+        actionOpen.triggered.connect(self.uploadFile)
         actionOpen.setShortcut("Ctrl+O")
-        actionOpenVideo.triggered.connect(self.uploadVideo)
+        actionOpenVideo.triggered.connect(self.uploadFile)
         actionOpenVideo.setShortcut("Ctrl+Shift+O")
 
         presetsMenu = menuBar.addMenu("&Presets")
@@ -330,8 +352,9 @@ class MainWindow(QMainWindow):
             return
         pixmap = self.QPixmapFromAny()
         self.preview.setPixmap(pixmap.scaled(self.preview.size(), Qt.AspectRatioMode.KeepAspectRatio))
-        self.resolutionSpinBoxW.setValue(pixmap.width())
-        self.resolutionSpinBoxH.setValue(pixmap.height())
+        self.aspectRatio = self.originalAspectRatio
+        self.resolutionSlider.setValue(int(pixmap.width() / 4))
+        self.resetControls()
 
     def QPixmapFromAny(self):
         extension = Path(self.currentImage).suffix.lower()
@@ -407,23 +430,26 @@ class MainWindow(QMainWindow):
             if height >= MIN_RESOLUTION:
                 self.aspectRatio = self.resolutionSpinBoxW.value() / height
 
-    @Slot()
-    def uploadImage(self):
-        fileName, _ = QFileDialog.getOpenFileName(self, "Open File", filter="Images (*.jpg *.jpeg, *.png *.bmp)")
-        if fileName:
-            self.currentImage = fileName
-            self.uploadPreview()
-
-    @Slot()
-    def uploadVideo(self):
-        fileName, _ = QFileDialog.getOpenFileName(self, "Open File", filter="Video Files (*.mkv *.avi *.mp4)")
-        # TODO: Implement logic to make temp copy for working with video instead of asking user to rename file
-        if not fileName.isascii():
+    def verifyVideo(self):
+        if self.currentImage is None:
+            return
+        fileType = Path(self.currentImage).suffix.lower()
+        if not self.currentImage.isascii() and fileType in VIDEO_EXTENSIONS:
             QMessageBox.critical(self, "Invalid Video", "The selected video file contains invalid characters. Please rename the video and try again.")
             return
+
+    @Slot()
+    def uploadFile(self, type="image"):
+        if type == "image":
+            filter = "Images (*.jpg *.jpeg, *.png *.bmp);;Video Files (*.mkv *.avi *.mp4);;All files (*.*)"
+        else:
+            filter = "Video Files (*.mkv *.avi *.mp4);;Images (*.jpg *.jpeg, *.png *.bmp);;All files (*.*)"
+
+        fileName, _ = QFileDialog.getOpenFileName(self, "Open File", filter=filter)
         if fileName:
             self.currentImage = fileName
-            self.uploadPreview()
+        self.verifyVideo()
+        self.uploadPreview()
 
     # sets UI preview image based on self.currentImage, which needs to be set before calling this
     def uploadPreview(self):
@@ -577,9 +603,9 @@ class MainWindow(QMainWindow):
         self.progressBar.setValue(0)
         self.toggleControls(False)
 
-        targetResolutionWidth, targetResolutionHeight, targetPalette, targetColors = self.getParamsFromUI()
+        targetResolutionWidth, targetResolutionHeight, targetPalette, targetColors, targetSaturation = self.getParamsFromUI()
 
-        self.worker = video.VideoProcessing(self.currentImage, outputPath, targetResolutionWidth, targetResolutionHeight, targetPalette, targetColors)
+        self.worker = video.VideoProcessing(self.currentImage, outputPath, targetResolutionWidth, targetResolutionHeight, targetPalette, targetColors, targetSaturation)
         self.worker.progress.connect(self.progressBar.setValue)
         self.worker.finished.connect(self.onVideoFinished)
         self.worker.error.connect(self.onVideoError)
