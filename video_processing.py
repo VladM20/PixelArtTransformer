@@ -12,7 +12,7 @@ class VideoProcessing(QThread):
     finished = Signal(str)
     error = Signal(str)
 
-    def __init__(self, inputPath, outputPath, newWidth, newHeight, palette, maxColors):
+    def __init__(self, inputPath, outputPath, newWidth, newHeight, palette, maxColors, saturation):
         super().__init__()
         self.inputPath = inputPath
         self.outputPath = outputPath
@@ -20,7 +20,9 @@ class VideoProcessing(QThread):
         self.newHeight = newHeight
         self.palette = palette
         self.maxColors = maxColors
+        self.saturation = saturation
 
+    # noinspection PyTypeChecker
     def run(self):
         try:
             cap = cv.VideoCapture(self.inputPath)
@@ -40,7 +42,7 @@ class VideoProcessing(QThread):
                     break
                 frame = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
                 frame = image.downscale(frame, self.newWidth, self.newHeight)
-                frame = image.colorProcessing(frame, self.palette, self.maxColors)
+                frame = image.colorProcessing(frame, self.palette, self.maxColors, self.saturation)
                 frame = image.upscale(frame, width, height)
                 frame = cv.cvtColor(frame, cv.COLOR_RGB2BGR)
                 out.write(frame)
