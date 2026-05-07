@@ -77,14 +77,16 @@ def upscale(img, newWidth, newHeight, keepAspectRatio=False):
     img_large = cv.resize(img,(newWidth, newHeight),interpolation=cv.INTER_NEAREST_EXACT)
     return img_large
 
-def colorProcessing(img, palette=None, maxColors=None, saturation=1.0):
+def colorProcessing(img, palette=None, maxColors=0, saturation=1.0):
     img = applySaturation(img, saturation)
+    if palette is None and maxColors == 0:
+        return img
     if palette is None:
         return dynamicPalette(img, maxColors)
     elif maxColors == 0:
         return fixedPalette(img,palette)
     else:
-        return img
+        raise Exception("Color processing failed")
 
 def dynamicPalette(img, maxColors):
     pixels = img.reshape(-1,3).astype(np.float32)
