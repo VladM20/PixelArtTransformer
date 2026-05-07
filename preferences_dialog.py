@@ -1,4 +1,5 @@
 import re
+from pathlib import Path
 
 from PySide6.QtCore import QSize, QSettings, Slot
 from PySide6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QComboBox, \
@@ -109,7 +110,9 @@ class PreferencesDialog(QDialog):
                                                   "Palette Files (*.hex *.csv);;All Files (*.*)")
 
         if filePath:
-            name, ok = QInputDialog.getText(self, "Palette Name", "Enter a name for this palette:")
+            suggestedName = Path(filePath).stem
+            name, ok = QInputDialog.getText(self, "Palette Name", "Enter a name for this palette:",
+                                            QLineEdit.EchoMode.Normal, suggestedName)
             if ok and name.strip():
                 name = name.strip()
                 if name in self.localCustomPalettes:
