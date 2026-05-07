@@ -103,6 +103,7 @@ class MainWindow(QMainWindow):
         # COLOR SETTINGS
         # palette dropdown
         self.paletteDropdown = QComboBox()
+        self.paletteDropdown.addItem("Original Colors")
         self.paletteDropdown.addItem("EGA (16 colors)")
         self.paletteDropdown.addItem("VGA (256 colors)")
         self.paletteDropdown.addItem("Custom")
@@ -341,7 +342,8 @@ class MainWindow(QMainWindow):
 
     @Slot(int)
     def showColorControls(self):
-        isCustom = (self.paletteDropdown.currentIndex() == 2)
+        targetPalette = str(self.paletteDropdown.currentText()).strip().lower()
+        isCustom = (targetPalette == "custom")
         self.basicColorWidget.setEnabled(isCustom)
         self.advancedColorWidget.setEnabled(isCustom)
         self.updatePreview()
@@ -354,6 +356,7 @@ class MainWindow(QMainWindow):
         self.preview.setPixmap(pixmap.scaled(self.preview.size(), Qt.AspectRatioMode.KeepAspectRatio))
         self.aspectRatio = self.originalAspectRatio
         self.resolutionSlider.setValue(int(pixmap.width() / 4))
+        self.updatePreview()
         self.resetControls()
 
     def QPixmapFromAny(self):
@@ -439,11 +442,9 @@ class MainWindow(QMainWindow):
             return
 
     @Slot()
-    def uploadFile(self, type="image"):
-        if type == "image":
-            filter = "Images (*.jpg *.jpeg, *.png *.bmp);;Video Files (*.mkv *.avi *.mp4);;All files (*.*)"
-        else:
-            filter = "Video Files (*.mkv *.avi *.mp4);;Images (*.jpg *.jpeg, *.png *.bmp);;All files (*.*)"
+    def uploadFile(self):
+
+        filter = "Images (*.jpg *.jpeg, *.png *.bmp);;Video Files (*.mkv *.avi *.mp4);;All files (*.*)"
 
         fileName, _ = QFileDialog.getOpenFileName(self, "Open File", filter=filter)
         if fileName:
@@ -474,10 +475,12 @@ class MainWindow(QMainWindow):
     def resetControls(self):
         # set controls UI
         self.lockRatioButton.blockSignals(True)
-        self.lockRatioButton.setChecked(True)  # blocking the lock ratio button from calling setLockRatio and
-        self.lockRatioButton.blockSignals(False)  # deleting the aspect ratio calculated above
+        self.lockRatioButton.setChecked(True)
+        self.lockRatioButton.blockSignals(False)
         self.toggleControls(True)
         self.setLockRatio(True)
+        self.paletteDropdown.setCurrentIndex(0)
+        self.saturationSlider.setValue(100)
 
 
     def getParamsFromUI(self):
@@ -485,7 +488,7 @@ class MainWindow(QMainWindow):
         targetResolutionHeight = 0
         targetPalette = str(self.paletteDropdown.currentText()).strip().lower()
         targetColors = 0
-        targetSaturation = 1.0
+        targetSaturation = float(self.saturationSlider.value()) / 100.0
         tab = self.tabs.currentIndex()
 
         match targetPalette:
@@ -493,24 +496,25 @@ class MainWindow(QMainWindow):
                 targetPalette = image.EGA_16_color_palette
             case "vga (256 colors)":
                 targetPalette = image.VGA_256_color_palette
+            case "original colors":
+                targetPalette = None
+                targetColors = 0
+            case "custom":
+                targetPalette = None
+                targetColors = self.colorSlider.value()
             case _:
                 targetPalette = None
-        #print("getParams: " + str(targetPalette))
+                targetColors = 0
+                print("INVALID OPTION")
 
         match tab:
             case 0: # basic tab
                 targetResolutionWidth = self.resolutionSlider.value()
                 targetResolutionHeight = int(self.resolutionSlider.value() / self.aspectRatio)
-                targetSaturation = float(self.saturationSlider.value()) / 100.0
-                if targetPalette is None:
-                    targetColors = self.colorSlider.value()
 
             case 1: # advanced tab
                 targetResolutionWidth = self.resolutionSpinBoxW.value()
                 targetResolutionHeight = self.resolutionSpinBoxH.value()
-                targetSaturation = float(self.saturationSpinBox.value()) / 100.0
-                if targetPalette is None:
-                    targetColors = self.colorSpinBox.value()
 
         return targetResolutionWidth, targetResolutionHeight, targetPalette, targetColors, targetSaturation
 
@@ -519,6 +523,7 @@ class MainWindow(QMainWindow):
         if self.noImage:
             #print("No Image Selected")
             return None
+
         targetResolutionWidth, targetResolutionHeight, targetPalette, targetColors, targetSaturation = self.getParamsFromUI()
         fileType = Path(self.currentImage).suffix.lower()
         if fileType in VIDEO_EXTENSIONS:
