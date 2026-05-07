@@ -1,15 +1,14 @@
-import sys
-from asyncio.windows_events import NULL
+import sys, re
 
 from pathlib import Path
 from PySide6.QtCore import QSize, Slot, QSettings
 
 import image_processing as image
 import video_processing as video
+import preferences_dialog as pref
 from PySide6.QtGui import QIcon, QAction, QGuiApplication, QPixmap, Qt, QImage
 from PySide6.QtWidgets import QApplication, QLabel, QPushButton, QSlider, QSpinBox, QMainWindow, \
-    QHBoxLayout, QWidget, QFileDialog, QComboBox, QVBoxLayout, QTabWidget, QMessageBox, QDialog, QLineEdit, \
-    QDialogButtonBox, QProgressBar
+    QHBoxLayout, QWidget, QFileDialog, QComboBox, QVBoxLayout, QTabWidget, QMessageBox, QProgressBar, QDialog
 
 MIN_RESOLUTION = 4
 MAX_RESOLUTION = 512
@@ -29,63 +28,14 @@ def resourcePath(relativePath):
         basePath = Path(__file__).parent
     return str(basePath / relativePath)
 
-class PreferencesDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setWindowTitle("Preferences")
-        self.setMinimumSize(QSize(500, 200))
-        self.settings = QSettings("PixelArtTransformer", "Settings")
 
-        mainLayout = QVBoxLayout(self)
-
-        directoryLayout = QHBoxLayout()
-        directoryLayout.addWidget(QLabel("Default save directory: "))
-        self.directoryEdit = QLineEdit()
-        self.directoryEdit.setText(str(self.settings.value("default_save_directory")))
-        directoryLayout.addWidget(self.directoryEdit)
-
-        browseButton = QPushButton("Browse...")
-        browseButton.clicked.connect(self.browseDirectory)
-        directoryLayout.addWidget(browseButton)
-
-        formatLayout = QHBoxLayout()
-        formatLayout.addWidget(QLabel("Default format: "))
-        self.formatDropdown = QComboBox()
-        self.formatDropdown.addItems(["png", "jpg", "jpeg", "bmp"])
-        savedFormat = self.settings.value("default_save_format")
-        if savedFormat is None:
-            savedFormat = "png"
-        self.formatDropdown.setCurrentText(savedFormat)
-        formatLayout.addWidget(self.formatDropdown)
-        formatLayout.addStretch()
-        # noinspection PyTypeChecker
-        ButtonBox = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Close)
-        ButtonBox.accepted.connect(self.saveSettings)
-        ButtonBox.rejected.connect(self.reject)
-
-        mainLayout.addLayout(directoryLayout)
-        mainLayout.addLayout(formatLayout)
-        mainLayout.addStretch()
-        mainLayout.addWidget(ButtonBox)
-
-    @Slot()
-    def saveSettings(self):
-        self.settings.setValue("default_save_directory", self.directoryEdit.text())
-        self.settings.setValue("default_save_format", self.formatDropdown.currentText())
-        self.accept()
-
-    @Slot()
-    def browseDirectory(self):
-        options = QFileDialog.Option.ShowDirsOnly
-        directory = QFileDialog.getExistingDirectory(self, "Select Save Folder", self.directoryEdit.text(), options=options)
-        if directory:
-            self.directoryEdit.setText(directory)
 
 # noinspection PyUnresolvedReferences
 class MainWindow(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.worker = None
+        self.settings = QSettings("PixelArtTransformer", "Settings")
         self.setWindowTitle("Pixel Art Transformer")
         # noinspection PyTypeChecker
         self.resize(QGuiApplication.primaryScreen().availableSize()*3/5)
@@ -103,10 +53,7 @@ class MainWindow(QMainWindow):
         # COLOR SETTINGS
         # palette dropdown
         self.paletteDropdown = QComboBox()
-        self.paletteDropdown.addItem("Original Colors")
-        self.paletteDropdown.addItem("EGA (16 colors)")
-        self.paletteDropdown.addItem("VGA (256 colors)")
-        self.paletteDropdown.addItem("Custom")
+        self.loadPaletteDropdown()
         self.paletteDropdown.currentIndexChanged.connect(self.showColorControls)
 
         # RESOLUTION SETTINGS
@@ -297,6 +244,16 @@ class MainWindow(QMainWindow):
             self.verifyVideo()
             self.uploadPreview()
 
+    def loadPaletteDropdown(self):
+        self.paletteDropdown.clear()
+        self.paletteDropdown.addItem("Original Colors", None)
+        self.paletteDropdown.addItem("Custom", "CUSTOM")
+        self.paletteDropdown.addItem("EGA (16 colors)", image.EGA_16_color_palette)
+        self.paletteDropdown.addItem("VGA (256 colors)", image.VGA_256_color_palette)
+
+        savedPalettes = self.settings.value("custom_palettes", defaultValue={})
+        for name, hexList in savedPalettes.items():
+            self.paletteDropdown.addItem(name, hexList)
 
     def createMenuBar(self):
         menuBar = self.menuBar()
@@ -320,7 +277,8 @@ class MainWindow(QMainWindow):
         actionOpen.setShortcut("Ctrl+O")
         actionOpenVideo.triggered.connect(self.uploadFile)
         actionOpenVideo.setShortcut("Ctrl+Shift+O")
-
+        # TODO: Remake presets so that they also set resolution
+        """
         presetsMenu = menuBar.addMenu("&Presets")
         actionVGA = QAction("VGA (256 colors)", self)
         actionVGA.triggered.connect(lambda: self.paletteDropdown.setCurrentIndex(1))
@@ -329,7 +287,7 @@ class MainWindow(QMainWindow):
 
         presetsMenu.addAction(actionVGA)
         presetsMenu.addAction(actionEGA)
-
+        """
         preferencesMenu = menuBar.addMenu("&Preferences")
         preferencesAction = QAction("&Preferences...", self)
         preferencesAction.triggered.connect(self.openPreferences)
@@ -337,15 +295,15 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def openPreferences(self):
-        dialog = PreferencesDialog(self)
-        dialog.exec()
+        dialog = pref.PreferencesDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.loadPaletteDropdown()
 
     @Slot(int)
     def showColorControls(self):
-        targetPalette = str(self.paletteDropdown.currentText()).strip().lower()
-        isCustom = (targetPalette == "custom")
-        self.basicColorWidget.setEnabled(isCustom)
-        self.advancedColorWidget.setEnabled(isCustom)
+        if self.paletteDropdown.currentData() == "CUSTOM":
+            self.basicColorWidget.setEnabled(True)
+            self.advancedColorWidget.setEnabled(True)
         self.updatePreview()
 
     @Slot()
@@ -482,30 +440,17 @@ class MainWindow(QMainWindow):
         self.paletteDropdown.setCurrentIndex(0)
         self.saturationSlider.setValue(100)
 
-
     def getParamsFromUI(self):
         targetResolutionWidth = 0
         targetResolutionHeight = 0
-        targetPalette = str(self.paletteDropdown.currentText()).strip().lower()
+        targetPalette = self.paletteDropdown.currentData()
         targetColors = 0
         targetSaturation = float(self.saturationSlider.value()) / 100.0
         tab = self.tabs.currentIndex()
 
-        match targetPalette:
-            case "ega (16 colors)":
-                targetPalette = image.EGA_16_color_palette
-            case "vga (256 colors)":
-                targetPalette = image.VGA_256_color_palette
-            case "original colors":
-                targetPalette = None
-                targetColors = 0
-            case "custom":
-                targetPalette = None
-                targetColors = self.colorSlider.value()
-            case _:
-                targetPalette = None
-                targetColors = 0
-                print("INVALID OPTION")
+        if targetPalette == "CUSTOM":
+            targetPalette = None
+            targetColors = self.colorSlider.value()
 
         match tab:
             case 0: # basic tab
@@ -561,13 +506,13 @@ class MainWindow(QMainWindow):
             self.updatePreview().save(str(filePath))
             # save default save directory and format
             if setPreferences:
-                settings = QSettings("PixelArtTransformer", "Settings")
+
 
                 saveDirectory = Path(filePath).parent
-                settings.setValue("default_save_directory", saveDirectory)
+                self.settings.setValue("default_save_directory", saveDirectory)
 
                 saveFormat = Path(filePath).suffix
-                settings.setValue("default_save_format", saveFormat)
+                self.settings.setValue("default_save_format", saveFormat)
 
     @Slot()
     def saveImage(self):
@@ -575,9 +520,8 @@ class MainWindow(QMainWindow):
             print("No Image Selected")
             return
         # read preferences
-        settings = QSettings("PixelArtTransformer", "Settings")
-        defaultDirectory = settings.value("default_save_directory")
-        defaultFormat = settings.value("default_save_format")
+        defaultDirectory = self.settings.value("default_save_directory")
+        defaultFormat = self.settings.value("default_save_format")
 
         if not defaultDirectory or not defaultFormat:
             self.saveAsImage(setPreferences=True)
@@ -634,19 +578,16 @@ class MainWindow(QMainWindow):
 
             # save default save directory and format
             if setPreferences:
-                settings = QSettings("PixelArtTransformer", "Settings")
-
                 saveDirectory = Path(filePath).parent
-                settings.setValue("default_save_directory", saveDirectory)
+                self.settings.setValue("default_save_directory", saveDirectory)
 
     @Slot()
     def saveVideo(self):
         if self.noImage:
             return
         # read preferences
-        settings = QSettings("PixelArtTransformer", "Settings")
-        defaultDirectory = settings.value("default_save_directory")
-        defaultFormat = settings.value("default_save_format")
+        defaultDirectory = self.settings.value("default_save_directory")
+        defaultFormat = self.settings.value("default_save_format")
 
         if not defaultDirectory or not defaultFormat:
             self.saveAsVideo(setPreferences=True)
